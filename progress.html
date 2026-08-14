@@ -153,6 +153,15 @@
   <h3>The sleeve that was reading as a seam</h3>
   <p>A straight rule across the arm at the same fraction of its length on both sides is not a cuff, it is the join where two tubes were butted together — which is exactly what a critic called it. The mark is now bowed, short of one or both edges, at a different height on each arm, and absent about one sleeve in five.</p>
 
+  <h3>“Every stripe crosses both arms, so the arms read as transparent.”</h3>
+  <p>Correct, and it was an ordering bug: arms were drawn before the garment, so every hem and stripe ran straight over them. Arms are now drawn last, over the finished garment — which is also the order a person draws them in. The hem stopped being a ruled line at the same time; it wanders on six points and stops short of the silhouette rather than running out past it.</p>
+
+  <h3>The hat brim, third variation on the same theme</h3>
+  <p>Three separate escapes have now been traced to the same root cause: a feature pinned at raw 3D coordinates and then filled. The crown arc, the headband, and now the brim — a peak at z=1.3 swings a full head-radius sideways as the head turns, collapses to a sliver, and lands across an eye as a black wedge. Capping how far it could travel only shortened the wedge. The brim is now built in screen space off the face-forward vector, so it foreshortens as the head turns, the way a brim seen from the side actually does.</p>
+
+  <h3>Letters that had stopped being letters</h3>
+  <p>Per-glyph shear, bulge and jitter were introduced to stop repeated letters superimposing, and a critic confirmed that worked. Pushed too far, though, and OTTO reads as 0550. All five distortion axes pulled back to the point where the variation survives and the word does too — the honest version of this is that a legibility check should have gone in with the distortion.</p>
+
   <h2>Still open</h2>
   <ul>
     <li>Every round, the critics still identify our sheets and still rank both Mannay plates above them. The gap has narrowed — one round put ours above one of his — but he has not been beaten.</li>

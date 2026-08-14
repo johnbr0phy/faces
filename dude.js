@@ -1420,6 +1420,26 @@
     }
   }
 
+  // A peak pinned at raw 3D coordinates swings sideways under yaw and lays a
+  // black wedge across the face. Built off the face-forward vector in screen
+  // space it foreshortens instead, the way a brim seen from the side does.
+  function brimPts(skull, h, reach, rng) {
+    if (!h || h.front.length < 3) return null;
+    const c0 = skull.project({ x: 0, y: -0.2, z: 0 });
+    const c1 = skull.project({ x: 0, y: -0.2, z: 1 });
+    const fx = c1.x - c0.x;
+    const fy = c1.y - c0.y;
+    const f = h.front;
+    const n = f.length;
+    const pick = [f[0], f[Math.round(n * 0.25)], f[Math.round(n * 0.5)], f[Math.round(n * 0.75)], f[n - 1]];
+    const out = pick.map((p, i) => {
+      const t = i / (pick.length - 1);
+      const k = reach * Math.sin(t * Math.PI) * rng.f(0.85, 1.15);
+      return { x: p.x + fx * k, y: p.y + fy * k };
+    });
+    return pick.concat(out.reverse());
+  }
+
   function drawHair(c, rng, skull, hull, style, color) {
     const s = skull.s;
     const shape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
@@ -1574,12 +1594,10 @@
       const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02, outer: "flattop" });
       if (h) {
         inkMass(c, rng, h, color, { strays: 0, rag: 1.1, edge: 3.2 });
-        const bL = pinOut(skull, { x: -0.5, y: -0.3, z: 0.78 });
-        const bR = pinOut(skull, { x: 0.5, y: -0.3, z: 0.78 });
-        const bC = pinOut(skull, { x: 0.02, y: -0.2, z: 1.3 });
-        if (bC.z > -0.1) {
-          inkMassFill(c, rng, [bL, bC, bR], color, { bite: s * 0.026 });
-          inkPoly(c, rng, [bL, bC, bR], { w: s * 0.023, passes: 2, dry: 0.5 });
+        const brim = brimPts(skull, h, rng.f(0.3, 0.62), rng);
+        if (brim) {
+          inkMassFill(c, rng, brim, color, { bite: s * 0.026 });
+          inkPoly(c, rng, brim, { closed: true, w: s * 0.023, dry: 0.5 });
         }
       }
       return;
@@ -1602,13 +1620,12 @@
         c.restore();
         inkPoly(c, rng, h.top, { w: s * 0.019, dry: 0.7 });
         inkPoly(c, rng, h.front, { w: s * 0.03, dry: 0.35, passes: 2 });
-        const bL = pinOut(skull, { x: -0.42, y: -0.24, z: 0.9 });
-        const bR = pinOut(skull, { x: 0.42, y: -0.24, z: 0.9 });
-        const bC = pinOut(skull, { x: 0.0, y: -0.1, z: 1.42 });
-        inkPoly(c, rng, [bL, bC, bR], { w: s * 0.026, passes: 2, dry: 0.5 });
-        const bL2 = pinOut(skull, { x: -0.3, y: -0.2, z: 1.02 });
-        const bR2 = pinOut(skull, { x: 0.3, y: -0.2, z: 1.02 });
-        inkPoly(c, rng, [bL2, bC, bR2], { w: s * 0.014 });
+        const brim = brimPts(skull, h, rng.f(0.34, 0.7), rng);
+        if (brim) {
+          inkPoly(c, rng, brim, { closed: true, w: s * 0.026, dry: 0.5 });
+          const half = brim.slice(Math.floor(brim.length / 2));
+          inkPoly(c, rng, half, { w: s * 0.014, dry: 0.9 });
+        }
       }
       return;
     }
