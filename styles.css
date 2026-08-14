@@ -72,3 +72,6 @@ body {
 @media (max-width: 640px) {
   #page { height: calc(100dvh - 60px); }
 }
+
+body.plate .dock { display: none; }
+body.plate #page { height: 100dvh; max-height: none; }

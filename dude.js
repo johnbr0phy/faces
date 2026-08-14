@@ -152,10 +152,15 @@
       // A real nib runs thin through a straight, presses hard through a turn
       // and lifts off at the exit. One width from start to stop is the single
       // loudest tell that a contour was plotted rather than drawn.
-      const slow = fbm2(u * 0.0085, sd * 0.011, sd + 5) - 0.5;
-      const slow2 = fbm2(u * 0.031, sd * 0.017, sd + 211) - 0.5;
+      // Scale the pressure wave to the STROKE, not to the page. Noise with a
+      // wavelength longer than the line gives every line one constant width,
+      // which is the thing every critic spots first.
+      const t01 = i / (n - 1);
+      const cyc = 1.3 + ((sd >>> 3) % 9) * 0.42;
+      const slow = fbm2(t01 * cyc * 2 + 7, sd * 0.011, sd + 5) - 0.5;
+      const slow2 = fbm2(t01 * cyc * 5.5 + 3, sd * 0.017, sd + 211) - 0.5;
       const fast = fbm2(u * 0.185, sd * 0.005, sd + 61) - 0.5;
-      let press = 1 + slow * 1.35 + slow2 * 0.6 + fast * 0.28;
+      let press = 1 + slow * 1.7 + slow2 * 0.62 + fast * 0.26;
       if (i < 3) press *= 1.3 - i * 0.09; // the nib sits down where it lands
       const tail = n - 1 - i;
       if (tail < 6) press *= 0.52 + (tail / 6) * 0.48; // and lifts on the way out
@@ -171,7 +176,7 @@
       while (ang < -Math.PI) ang += Math.PI * 2;
       const turn = Math.abs(ang);
       if (turn > 0.35) press *= 1 + Math.min(0.7, (turn - 0.35) * 1.1); // ink pools in the corner
-      W[i] = Math.max(0.32, w * Math.min(2.4, Math.max(0.24, press)));
+      W[i] = Math.max(0.3, w * Math.min(2.6, Math.max(0.2, press)));
       // the nib lifts rarely and briefly; a dashed line is a broken pen,
       // not a dry one. Thin strokes skip more than fat ones.
       const dry = fbm2(u * 0.19 + 11, sd * 0.02, sd + 137);
@@ -438,25 +443,43 @@
     c.restore();
     c.fillStyle = PAPER;
     c.fillRect(0, 0, w, h);
-    for (let i = 0; i < 7; i++) {
-      c.fillStyle = rng.chance(0.5) ? "rgba(92,70,42,0.008)" : "rgba(255,250,238,0.012)";
+    // Cartridge paper is not a flat tone. Big soft blooms, then fibre lying
+    // in the sheet, then tooth. A flat field with speckle on it is the
+    // easiest thing in the whole drawing to spot as printed.
+    for (let i = 0; i < 16; i++) {
+      c.fillStyle = rng.chance(0.5) ? "rgba(92,78,52,0.006)" : "rgba(255,252,244,0.01)";
       c.beginPath();
-      c.ellipse(rng.f(0, w), rng.f(0, h), rng.f(8, 28), rng.f(5, 16), rng.f(0, 6), 0, Math.PI * 2);
+      c.ellipse(rng.f(-40, w + 40), rng.f(-40, h + 40), rng.f(40, 190), rng.f(28, 130), rng.f(0, 6), 0, Math.PI * 2);
       c.fill();
     }
-    for (let i = 0; i < 3400; i++) {
-      c.fillStyle = rng.chance(0.62) ? "rgba(48,36,22,0.035)" : "rgba(255,255,255,0.03)";
-      c.fillRect(rng.f(0, w), rng.f(0, h), rng.f(0.3, 1.1), rng.f(0.25, 0.7));
-    }
-    for (let i = 0; i < 90; i++) {
-      c.strokeStyle = "rgba(70,52,32,0.022)";
-      c.lineWidth = rng.f(0.25, 0.5);
-      c.beginPath();
+    for (let i = 0; i < 900; i++) {
+      const a = rng.f(0, Math.PI * 2);
+      const len = rng.f(3, 22);
+      const dark = rng.chance(0.55);
+      c.strokeStyle = dark ? "rgba(74,60,40,0.03)" : "rgba(255,253,246,0.05)";
+      c.lineWidth = rng.f(0.4, 1.0);
       const x = rng.f(0, w);
       const y = rng.f(0, h);
+      c.beginPath();
       c.moveTo(x, y);
-      c.lineTo(x + rng.f(-14, 14), y + rng.f(-1.6, 1.6));
+      c.quadraticCurveTo(
+        x + Math.cos(a) * len * 0.5 + rng.f(-2, 2),
+        y + Math.sin(a) * len * 0.5 + rng.f(-2, 2),
+        x + Math.cos(a) * len,
+        y + Math.sin(a) * len
+      );
       c.stroke();
+    }
+    for (let i = 0; i < 4200; i++) {
+      c.fillStyle = rng.chance(0.6) ? "rgba(48,36,22,0.032)" : "rgba(255,255,255,0.034)";
+      c.fillRect(rng.f(0, w), rng.f(0, h), rng.f(0.3, 1.2), rng.f(0.25, 0.8));
+    }
+    for (let i = 0; i < 40; i++) {
+      // the odd fleck of pulp
+      c.fillStyle = "rgba(58,44,28,0.1)";
+      c.beginPath();
+      c.ellipse(rng.f(0, w), rng.f(0, h), rng.f(0.5, 1.7), rng.f(0.4, 1.1), rng.f(0, 6), 0, Math.PI * 2);
+      c.fill();
     }
   }
 
@@ -745,7 +768,27 @@
     const hull = skull.silhouette(rng);
     inkFill(c, rng, hull, PAPER, 1, 0.6);
     if (skinWash) inkFill(c, rng, hull, skinWash, 0.16, 0.6);
-    inkPoly(c, rng, hull, { closed: true, doubled: true, w: skull.s * 0.03 * (skull.pen || 1), dry: 0.4 });
+    // A head is not one closed loop. It is a cranium drawn over, then a jaw
+    // drawn under, and they overshoot and cross where they meet — which is
+    // also where the pen bears down. One continuous perturbed circle is what
+    // makes a face read as a sticker instead of a skull.
+    const n = hull.length;
+    const arc = (a, b) => {
+      const out = [];
+      for (let i = a; i <= b; i++) out.push(hull[((i % n) + n) % n]);
+      return out;
+    };
+    const ov = Math.round(n * rng.f(0.05, 0.11));
+    const w0 = skull.s * 0.03 * (skull.pen || 1);
+    const cranium = arc(-ov, Math.round(n * 0.5) + ov);
+    const jaw = arc(Math.round(n * 0.5) - ov, n + ov);
+    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.85, 1.02), dry: 0.45, doubled: rng.chance(0.55) });
+    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.1, 1.4), dry: 0.35, doubled: rng.chance(0.7) });
+    if (rng.chance(0.35)) {
+      // a cheek restated on one side only
+      const a0 = Math.round(n * rng.f(0.02, 0.12));
+      inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.75, dry: 1.2 });
+    }
 
     const earL = pin(skull, { x: -0.92, y: 0.02, z: 0.05 });
     const earR = pin(skull, { x: 0.92, y: 0.02, z: 0.05 });
@@ -1582,7 +1625,8 @@
     const hipY = neckY + s * rng.f(1.95, 2.3);
     const kneeY = hipY + s * rng.f(0.85, 1.05);
     const footY = hipY + s * rng.f(1.7, 2.05);
-    const armR = (t) => s * (0.19 - 0.075 * t);
+    const aw0 = rng.f(0.17, 0.22);
+    const armR = (t) => s * (aw0 - (aw0 - rng.f(0.075, 0.1)) * Math.pow(t, 0.8));
     const legR = (t) => s * (rng.f(0.18, 0.23) - 0.065 * t);
     const pose = clothes.pose;
     const shrug = rng.f(-0.06, 0.1);
@@ -1682,8 +1726,28 @@
 
     // Core figure: neck, shoulders, sides, legs, feet. Arms go on top as
     // their own shapes, the way an arm crossing a body is actually drawn.
+    // Subdivide the straight runs so the pen has somewhere to wander. A
+    // shoulder that travels 100px without a bulge or a dent is a ruled line,
+    // and the head above it never is.
+    const span = (a, b, n) => {
+      const out = [];
+      for (let i = 1; i < n; i++) {
+        const t = i / n;
+        out.push({
+          x: a.x + (b.x - a.x) * t + rng.f(-1, 1) * s * 0.035,
+          y: a.y + (b.y - a.y) * t + rng.f(-1, 1) * s * 0.03,
+        });
+      }
+      return out;
+    };
     const core = []
-      .concat([neckL, shoulderL, waistL, hipL])
+      .concat([neckL])
+      .concat(span(neckL, shoulderL, 3))
+      .concat([shoulderL])
+      .concat(span(shoulderL, waistL, 4))
+      .concat([waistL])
+      .concat(span(waistL, hipL, 3))
+      .concat([hipL])
       .concat(edgeOf(LlS, legR, -1).slice(1))
       .concat(Lfoot)
       .concat(edgeOf(LlS, legR, 1).reverse().slice(1, -1))
@@ -1691,7 +1755,13 @@
       .concat(edgeOf(RlS, legR, -1).slice(1))
       .concat(Rfoot.slice().reverse())
       .concat(edgeOf(RlS, legR, 1).reverse().slice(1, -1))
-      .concat([hipR, waistR, shoulderR, neckR]);
+      .concat([hipR])
+      .concat(span(hipR, waistR, 3))
+      .concat([waistR])
+      .concat(span(waistR, shoulderR, 4))
+      .concat([shoulderR])
+      .concat(span(shoulderR, neckR, 3))
+      .concat([neckR]);
 
     const armShape = (S) => {
       const a = edgeOf(S, armR, -1);
@@ -1719,6 +1789,15 @@
     if (pose !== "folded" && pose !== "pockets") {
       hand(c, rng, LaS, armR(1), -1, s);
       hand(c, rng, RaS, armR(1), 1, s);
+    } else if (pose === "pockets") {
+      for (let side = -1; side <= 1; side += 2) {
+        const t = side < 0 ? LaS[LaS.length - 1] : RaS[RaS.length - 1];
+        inkPoly(c, rng, [
+          { x: t.x - side * s * 0.22, y: t.y - s * rng.f(0.16, 0.26) },
+          { x: t.x - side * s * 0.06, y: t.y - s * 0.04 },
+          { x: t.x + side * s * rng.f(0.08, 0.16), y: t.y + s * rng.f(0.0, 0.06) },
+        ], { w: s * 0.017, dry: 0.7 });
+      }
     }
     const outline = core;
 
@@ -1777,6 +1856,44 @@
       }
       cuff(LaS, -1);
       cuff(RaS, 1);
+    }
+
+    // Cloth has folds. A flat fill inside a clean outline is the difference
+    // between a garment and a silhouette.
+    const fold = (x0, y0, x1, y1, wk) =>
+      inkPoly(c, rng, [
+        { x: x0, y: y0 },
+        { x: (x0 + x1) / 2 + rng.f(-4, 4), y: (y0 + y1) / 2 + rng.f(-3, 3) },
+        { x: x1, y: y1 },
+      ], { w: s * (wk ?? 0.014), dry: 0.9, wobble: s * 0.02 });
+
+    for (let side = -1; side <= 1; side += 2) {
+      const sx0 = side < 0 ? shoulderL : shoulderR;
+      const n = rng.i(1, 3);
+      for (let i = 0; i < n; i++) {
+        fold(
+          sx0.x - side * s * rng.f(0.06, 0.2),
+          sx0.y + s * rng.f(0.12, 0.3),
+          sx0.x - side * s * rng.f(0.3, 0.55),
+          sx0.y + s * rng.f(0.45, 0.8)
+        );
+      }
+    }
+    if (rng.chance(0.82)) {
+      const n = rng.i(2, 5);
+      for (let i = 0; i < n; i++) {
+        const x0 = waistL.x + ((waistR.x - waistL.x) * (i + 0.6)) / n;
+        fold(x0, hemY - s * rng.f(0.2, 0.42), x0 + rng.f(-5, 5), hemY - s * rng.f(0.01, 0.08), 0.011);
+      }
+    }
+    if (rng.chance(0.6)) {
+      // shadow under the hem
+      const n = rng.i(4, 9);
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        const x0 = waistL.x + (waistR.x - waistL.x) * t;
+        inkLine(c, rng, x0, hemY - s * rng.f(0.02, 0.1), x0 + s * rng.f(0.04, 0.1), hemY + rng.f(-2, 2), s * 0.01);
+      }
     }
 
     if (clothes.pattern) {
@@ -1912,21 +2029,29 @@
   function drawGlyph(c, rng, ch, x, y, size, wk) {
     const d = GLYPHS[ch];
     if (!d) return size * 0.55;
-    const sx = size * rng.f(0.88, 1.12);
-    const sy = size * rng.f(0.9, 1.12);
-    const rot = rng.f(-0.075, 0.075);
-    const w = size * (ch === " " ? 0.36 : ch === "i" || ch === "l" || ch === "I" || ch === "'" ? 0.42 : rng.f(0.74, 0.88));
+    const sx = size * rng.f(0.86, 1.14);
+    const sy = size * rng.f(0.88, 1.14);
+    const rot = rng.f(-0.09, 0.09);
+    // A hand cannot repeat a letterform. Shear it, squash it unevenly, and
+    // push every control point — otherwise the two O's in a word superimpose
+    // and the whole thing reads as a distressed typeface.
+    const shear = rng.f(-0.22, 0.22);
+    const bulge = rng.f(-0.16, 0.16);
+    const gseed = rng.i(1, 99999);
+    const w = size * (ch === " " ? 0.55 : ch === "i" || ch === "l" || ch === "I" || ch === "'" ? 0.42 : rng.f(0.74, 0.88));
     d.forEach((stroke) => {
       const cmds = parsePath(stroke);
       const pts = [];
       let px = 0;
       let py = 0;
       const xf = (u, v) => {
-        const rx = (u - 0.5) * sx;
+        const jx = (fbm2(u * 3.1 + gseed * 0.01, v * 3.1, gseed) - 0.5) * size * 0.09;
+        const jy = (fbm2(v * 3.7 + gseed * 0.01, u * 3.7, gseed + 41) - 0.5) * size * 0.09;
+        const rx = (u - 0.5 + bulge * v * (1 - v) * 2) * sx - v * shear * sx;
         const ry = v * sy;
         return {
-          x: x + rx * Math.cos(rot) - ry * Math.sin(rot),
-          y: y + rx * Math.sin(rot) + ry * Math.cos(rot) + rng.f(-0.2, 0.2),
+          x: x + rx * Math.cos(rot) - ry * Math.sin(rot) + jx,
+          y: y + rx * Math.sin(rot) + ry * Math.cos(rot) + jy,
         };
       };
       cmds.forEach((cmd) => {
@@ -1951,13 +2076,28 @@
           py = dlt.y;
         }
       });
-      inkPoly(c, rng, pts, { w: size * (wk ?? rng.f(0.085, 0.155)), passes: 1, dry: 0.55, wobble: size * rng.f(0.035, 0.075) });
+      // the pen runs past the join instead of stopping on it
+      if (pts.length > 1 && rng.chance(0.55)) {
+        const a = pts[pts.length - 2];
+        const b = pts[pts.length - 1];
+        const k = rng.f(0.06, 0.24);
+        pts.push({ x: b.x + (b.x - a.x) * k * 3, y: b.y + (b.y - a.y) * k * 3 });
+      }
+      inkPoly(c, rng, pts, { w: size * (wk ?? rng.f(0.08, 0.17)), passes: 1, dry: 0.55, wobble: size * rng.f(0.035, 0.08) });
     });
     return w;
   }
 
   function drawName(c, rng, name, x, y, size, opt = {}) {
-    const text = opt.caps === false ? String(name) : String(name).toUpperCase();
+    const raw = String(name);
+    const text =
+      opt.caps === false
+        ? raw
+        : rng.chance(0.45)
+        ? raw.toUpperCase()
+        : rng.chance(0.5)
+        ? raw
+        : raw.replace(/\b(\w)(\w*)/g, (m, a, b) => a.toUpperCase() + (rng.chance(0.3) ? b.toUpperCase() : b));
     c.save();
     c.translate(x, y);
     c.rotate(rng.f(-0.045, 0.035));
@@ -1978,7 +2118,7 @@
       const dy = drift + px * slope + late;
       const adv = drawGlyph(c, rng, ch, px, dy, cs, opt.w);
       // hand lettering closes up after a round letter
-      const tuck = round.includes(prev) || round.includes(ch) ? -size * rng.f(0.01, 0.045) : 0;
+      const tuck = ch === " " || prev === " " ? size * rng.f(0.02, 0.09) : round.includes(prev) || round.includes(ch) ? -size * rng.f(0.01, 0.045) : 0;
       px += adv + size * rng.f(0.03, 0.11) + tuck;
       prev = ch;
     }
@@ -2163,7 +2303,7 @@
       nameX = cx + s * rng.f(1.0, 1.35);
       nameY = cy + s * rng.f(0.1, 0.6);
     }
-    nameX = Math.max(18, Math.min(w - size * String(dude.name).length * 0.62 - 12, nameX));
+    nameX = Math.max(16, Math.min(w - size * String(dude.name).length * 0.95 - 14, nameX));
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
     drawName(c, rng, dude.name, nameX, nameY, size);
     grainPass(c);
@@ -2179,12 +2319,16 @@
     const cw = w / cols;
     const ch = (h - 24) / rows;
     for (let r = 0; r < rows; r++) {
+      // rows drift and crowd the way a hand fills a page
+      const rowDx = rng0.f(-10, 10);
+      const rowDy = rng0.f(-7, 7);
+      const rowS = rng0.f(0.9, 1.1);
       for (let col = 0; col < cols; col++) {
         const rng = new Rng((seed0 + (r * cols + col) * 7919) >>> 0);
         const d = makeDude(rng);
-        const s = Math.min(cw, ch) * rng.f(0.3, 0.38);
-        const cx = cw * (col + 0.5) + rng.f(-6, 6);
-        const cy = 18 + ch * (r + 0.5) + rng.f(-6, 6);
+        const s = Math.min(cw, ch) * rng.f(0.26, 0.42) * rowS;
+        const cx = cw * (col + 0.5) + rowDx + rng.f(-13, 13);
+        const cy = 18 + ch * (r + 0.5) + rowDy + rng.f(-11, 11);
         const skull = new Skull(cx, cy, s, d.yaw, d.pitch, d.roll, d.ratio, d.depth, {
           jaw: d.jaw, chin: d.chin, crown: d.crown, cheek: d.cheek,
           lobeA: d.lobeA, lobeB: d.lobeB, lobeAmp: d.lobeAmp, lobePh: d.lobePh,
@@ -2226,6 +2370,8 @@
     drawName(bc, rng, "another dude", 8, 7, 25, { caps: false, rule: true, w: 0.05 });
   }
 
+  const PLATE = !!new URLSearchParams(location.search).get("plate");
+  if (PLATE) document.body.classList.add("plate");
   let count = 0;
   let seed = parseSeed();
 
@@ -2239,7 +2385,7 @@
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (new URLSearchParams(location.search).get("plate")) drawPlate(ctx, cssW, cssH, seed);
+    if (PLATE) drawPlate(ctx, cssW, cssH, seed);
     else drawDude(ctx, rng, dude, cssW, cssH);
     count += 1;
     drawButton(seed ^ 0x9e3779b9);
