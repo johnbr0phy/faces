@@ -15,6 +15,14 @@ along its length, pooling where it lands and lifting on the way out. Masses are
 built from strokes so their ends make the edge. The paper has tooth and mottle,
 tuned by measurement.
 
+Which pen is a property of the drawing. Most days it is the house dry nib, but
+sometimes it is a biro — thin, navy, near-constant width, skipping where the
+ball runs dry and never pooling — or a fineliner laying one dead-even line, or
+a wet blue-black fountain nib that blots into every join, or something soft and
+broad and grainy. Colour, weight, pressure wave, skip rate, pooling, filaments
+and paper bite all come off the pen, so every mark on the page agrees, down to
+the hair and the name written underneath.
+
 ## Run it
 
 Open `index.html`, or:

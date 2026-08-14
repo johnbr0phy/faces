@@ -4,9 +4,94 @@
   const tallyEl = document.getElementById("tally");
   const btn = document.getElementById("another");
 
-  const INK = "#232019";
+  const HOUSE_INK = "#232019";
+  let INK = HOUSE_INK;
   const PAPER = "#dfdacf";
   const PAPER_RGB = [223, 218, 207];
+
+  // ---------- what he picked up that day ----------
+  // Across the reference sheets the same hand is plainly not always holding
+  // the same pen. One page is a wet blue-black nib that pools in every corner;
+  // the next is a biro — thin, wiry, navy, skipping where the ball runs dry;
+  // another is a fineliner laying down one dead-even width with no swell at
+  // all; another is soft and broad and grainy, more graphite than ink. Faces
+  // drawn with one pen and faces drawn with another are the single loudest
+  // difference between two of his sheets, and we were rendering all of them
+  // with one nib.
+  //
+  // So the pen is a property of the drawing, not of the program. Every stroke
+  // reads it: colour, base weight, how much the width breathes along a line,
+  // how readily it skips, how far it wobbles, whether it pools, whether the
+  // flanks split into filaments, and how hard the paper bites back.
+  //
+  //   press 1 = full dry-nib pressure wave, 0 = one width start to stop
+  //   dry   1 = house skip rate; a fineliner barely skips, a biro skips a lot
+  //   pool  1 = house corner pooling and blots; 0 = none, ever
+  //   split 1 = house filaments; multiplies the width at which flanks appear
+  //   bite  1 = house tooth eaten out of the mark
+  const PENS = {
+    // the house dry nib — still the pen most days
+    nib: { ink: "#232019", w: 1.0, press: 1.0, dry: 1.0, wobble: 1.0, pool: 1.0, split: 1.0, bite: 1.0 },
+    // a wet blue-black fountain nib: fat, swelling, blotting into every join
+    fountain: { ink: "#232f4a", w: 1.24, press: 1.2, dry: 0.6, wobble: 1.05, pool: 1.6, split: 1.15, bite: 0.8 },
+    // a biro: thin, wiry, navy, near-constant width, skipping where the ball
+    // runs dry, and never pooling — a ballpoint has no wet edge to pool from
+    biro: { ink: "#2b3560", w: 0.7, press: 0.34, dry: 1.7, wobble: 1.3, pool: 0.18, split: 0.3, bite: 0.45 },
+    // a black biro is the same pen with the other refill in it
+    biroBlack: { ink: "#25252b", w: 0.72, press: 0.32, dry: 1.6, wobble: 1.28, pool: 0.18, split: 0.3, bite: 0.45 },
+    // a fineliner: one dead-even width, no swell, no blot, no split
+    fine: { ink: "#141312", w: 0.82, press: 0.14, dry: 0.3, wobble: 0.72, pool: 0, split: 0, bite: 0.3 },
+    // brown ink, a shade drier than the house nib
+    sepia: { ink: "#4a3325", w: 0.96, press: 0.9, dry: 1.3, wobble: 1.0, pool: 0.75, split: 0.9, bite: 1.2 },
+    // the dark green-black bottle
+    forest: { ink: "#2c382f", w: 0.9, press: 0.85, dry: 1.15, wobble: 1.05, pool: 0.6, split: 0.8, bite: 1.05 },
+    // soft and broad: more graphite than ink, all tooth and no wet at all
+    soft: { ink: "#2e2c28", w: 1.2, press: 0.72, dry: 1.7, wobble: 1.2, pool: 0.12, split: 1.45, bite: 1.5 },
+  };
+
+  // Weighted so the house nib is still what he reaches for most of the time.
+  // A sheet where every face is a different pen is a swatch card, not a
+  // sketchbook.
+  const PEN_BAG = [
+    "nib", "nib", "nib", "nib", "nib", "nib",
+    "biro", "biro", "biro",
+    "fine", "fine",
+    "soft", "soft",
+    "fountain", "fountain",
+    "biroBlack",
+    "sepia",
+    "forest",
+  ];
+
+  let PEN = PENS.nib;
+
+  function setPen(kind) {
+    PEN = PENS[kind] || PENS.nib;
+    INK = PEN.ink;
+  }
+
+  function hexRgb(h) {
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  function rgbHex(r, g, b) {
+    const c = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+    return "#" + c(r) + c(g) + c(b);
+  }
+
+  // Hair is not a different substance from the face; it is more of the same
+  // pen. The stored hair shade is written against the house ink, so re-express
+  // it against whatever pen is in hand — otherwise a navy biro draws a navy
+  // head with a black thatch sitting on it, and the thatch reads as pasted on.
+  function penShade(hex) {
+    if (PEN.ink === HOUSE_INK) return hex;
+    const [hr, hg, hb] = hexRgb(hex);
+    const [br, bg, bb] = hexRgb(HOUSE_INK);
+    const [pr, pg, pb] = hexRgb(PEN.ink);
+    const k = (hr + hg + hb + 3) / (br + bg + bb + 3);
+    return rgbHex(pr * k, pg * k, pb * k);
+  }
 
   // ---------- seeded rng ----------
   function mulberry32(a) {
@@ -142,7 +227,7 @@
   // One dry-nib stroke through a polyline.
   function nib(c, rng, path, opt = {}) {
     if (!path || path.length < 2) return;
-    const w = opt.w ?? 1.8;
+    const w = (opt.w ?? 1.8) * PEN.w;
     let pts = path.slice();
     if (opt.closed) pts = pts.concat([pts[0], pts[1], pts[2] || pts[0]]); // overshoot past the join
     const L = polyLen(pts);
@@ -153,7 +238,7 @@
     if (n < 2) return;
 
     // hand wobble, applied along the path normal so corners survive
-    const amp = opt.wobble ?? Math.min(2.0, 0.26 + L * 0.011);
+    const amp = (opt.wobble ?? Math.min(2.0, 0.26 + L * 0.011)) * PEN.wobble;
     const N0 = normals(S);
     const P = new Array(n);
     for (let i = 0; i < n; i++) {
@@ -181,10 +266,14 @@
       const slow = fbm2(t01 * cyc * 2 + 7, sd * 0.011, sd + 5) - 0.5;
       const slow2 = fbm2(t01 * cyc * 5.5 + 3, sd * 0.017, sd + 211) - 0.5;
       const fast = fbm2(u * 0.185, sd * 0.005, sd + 61) - 0.5;
-      let press = 1 + slow * 1.7 + slow2 * 0.62 + fast * 0.26;
-      if (i < 3) press *= 1.3 - i * 0.09; // the nib sits down where it lands
+      // How much the width breathes is the pen's, not the line's. A fineliner
+      // holds one width from start to stop; a wet nib swells through every
+      // turn. pk = 0 collapses the whole wave to a constant.
+      const pk = PEN.press;
+      let press = 1 + (slow * 1.7 + slow2 * 0.62 + fast * 0.26) * pk;
+      if (i < 3) press *= 1 + (0.3 - i * 0.09) * pk; // the nib sits down where it lands
       const tail = n - 1 - i;
-      if (tail < 6) press *= 0.52 + (tail / 6) * 0.48; // and lifts on the way out
+      if (tail < 6) press *= 1 - (0.48 - (tail / 6) * 0.48) * pk; // and lifts on the way out
       // Measure the turn over a real span. At 1px resampling, a hair of
       // wobble looks like a hairpin, and the corner-pooling fires on every
       // straight in the drawing.
@@ -199,13 +288,13 @@
       // ink pools in a corner, but only a real corner: past about 1.2 rad the
       // pen is travelling round an end, not stopping into a join, and a blob
       // there reads as an armature pivot bolted to the drawing
-      if (turn > 0.35 && turn < 1.25) press *= 1 + Math.min(0.55, (turn - 0.35) * 0.95);
+      if (turn > 0.35 && turn < 1.25) press *= 1 + Math.min(0.55, (turn - 0.35) * 0.95) * PEN.pool;
       if (opt.taper !== undefined) press *= 1 + (opt.taper - 1) * Math.pow(t01, opt.taperPow ?? 1.4);
       W[i] = Math.max(0.26, w * Math.min(2.6, Math.max(0.08, press)));
       // the nib lifts rarely and briefly; a dashed line is a broken pen,
       // not a dry one. Thin strokes skip more than fat ones.
       const dry = fbm2(u * 0.19 + 11, sd * 0.02, sd + 137);
-      const thr = 0.125 * dryK * (w < 1.3 ? 1.4 : w > 2.6 ? 0.5 : 1);
+      const thr = 0.125 * dryK * PEN.dry * (w < 1.3 ? 1.4 : w > 2.6 ? 0.5 : 1);
       live[i] = !(dryK > 0 && dry < thr && i > 1 && i < n - 2);
     }
 
@@ -254,12 +343,14 @@
     };
 
     band(0, 0.82, sd, 0);
-    if (w > 1.7) {
-      band(-0.32, 0.3, sd + 401, 0.45);
-      band(0.32, 0.3, sd + 733, 0.47);
+    // A ballpoint does not split and a fineliner has nothing to split with.
+    // A soft broad pen splits almost from the first hair of width.
+    if (w * PEN.split > 1.7) {
+      band(-0.32, 0.3 * PEN.split, sd + 401, 0.45);
+      band(0.32, 0.3 * PEN.split, sd + 733, 0.47);
     }
     // the odd blot where the nib sat down too long
-    if (w > 1.4 && rng.chance(0.1)) {
+    if (w > 1.4 && rng.chance(0.1 * PEN.pool)) {
       const k = Math.min(n - 1, Math.max(0, rng.i(2, Math.max(3, n - 3))));
       const q = P[k];
       c.beginPath();
@@ -269,12 +360,12 @@
     // The sheet bites back into the mark itself, not only in a pass over the
     // whole page afterwards. Localising it per stroke is the difference
     // between ink on paper and a filled vector shape.
-    if (w > 1.1) {
+    if (w > 1.1 && PEN.bite > 0) {
       for (let k = 1; k < n - 1; k += 2) {
-        if (!live[k] || !rng.chance(0.3)) continue;
+        if (!live[k] || !rng.chance(Math.min(0.75, 0.3 * PEN.bite))) continue;
         const hw = W[k] * 0.5;
         const u = (rng.chance(0.5) ? 1 : -1) * rng.f(0.72, 1.12);
-        const sz = W[k] * rng.f(0.18, 0.42);
+        const sz = W[k] * rng.f(0.18, 0.42) * Math.min(1.6, PEN.bite);
         c.fillStyle = PAPER;
         c.globalAlpha = rng.f(0.35, 0.8);
         c.fillRect(P[k].x + NN[k].x * hw * u - sz / 2, P[k].y + NN[k].y * hw * u - sz / 2, sz, sz);
@@ -285,7 +376,7 @@
     // pools where the nib lingered
     for (let k = 3; k < n - 3; k += 2) {
       if (!live[k] || W[k] < w * 1.3) continue;
-      if (!rng.chance(0.14)) continue;
+      if (!rng.chance(0.14 * PEN.pool)) continue;
       c.beginPath();
       c.ellipse(P[k].x, P[k].y, W[k] * 0.58, W[k] * 0.46, k * 0.3, 0, Math.PI * 2);
       c.fill();
@@ -3907,6 +3998,9 @@
     d.jawTaper = Math.max(0.72, Math.min(1.0, d.jawTaper));
     d.pinch = Math.max(0.12, Math.min(0.34, d.pinch));
     d.pen = rng.f(0.98, 1.12);
+    // and which pen was on the desk. On a plate this varies face to face,
+    // the way a sheet filled over a week does.
+    d.penKind = rng.pick(PEN_BAG);
     return d;
   }
 
@@ -4067,6 +4161,7 @@
   // knows about the page, so the caller is free to put him where he fits.
   function figureInk(c, R, dude, cx, cy, s) {
     const rng = R.mark;
+    setPen(dude.penKind);
 
     const skull = new Skull(cx, cy, s, dude.yaw, dude.pitch, dude.roll, dude.ratio, dude.depth, {
       jaw: dude.jaw,
@@ -4122,7 +4217,7 @@
     // the shadow falls away from the turn
     if (dude.shade) cheekHatch(c, rng, skull, hull, -(Math.sign(prof.x) || 1));
     const inFront = [];
-    const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront, dude.hairTone);
+    const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, penShade(dude.hairColor), inFront, dude.hairTone);
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
     // beard first: a filled mass drawn after the mouth swallows it
@@ -4389,6 +4484,9 @@
     nameY = Math.max(size * 0.9, Math.min(lowY, nameY));
     drawName(c, R.name, dude.name, nameX, nameY, size);
 
+    // The furniture at the foot of the page is not part of the drawing, so it
+    // is not written with whatever pen the drawing happened to use.
+    setPen("nib");
     const hits = drawFooter(c, seed, w, foot);
     grainPass(c, c.__dpr);
     return hits;
@@ -4560,6 +4658,7 @@
         skull.faceY = d.faceY;
         skull.gaze = d.gaze;
         skull.eyeGap = d.eyeGap;
+        setPen(d.penKind);
         const hull = skull.silhouette();
         const prof = noseProfile(skull, d);
         const bump = d.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
@@ -4570,7 +4669,7 @@
         headOutline(c, rng, skull, hull, gaps);
         if (d.shade) cheekHatch(c, rng, skull, hull, -(Math.sign(prof.x) || 1));
         const inFront = [];
-        const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront, d.hairTone);
+        const hairMassPts = drawHair(c, rng, skull, hull, d.hair, penShade(d.hairColor), inFront, d.hairTone);
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
         drawFacialHair(c, rng, skull, d.beard);
