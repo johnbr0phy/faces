@@ -1047,7 +1047,79 @@
     inkFill(c, rng, mass, color, 1, (opt.rag ?? 2.0) * k * 0.7);
     ragEdge(c, rng, top, h._cx, h._cy, (opt.rag ?? 2.0) * k * 1.5, color);
     inkPoly(c, rng, front, { w: (opt.edge ?? 2.5) * k, dry: 0.5 });
+    capBreaks(c, rng, h, color, opt);
     strayHairs(c, rng, h, opt);
+  }
+
+  // One cap topology — a hairline with the crown offset outward — gives the
+  // same three or four silhouettes at forty scales and rotations, and a
+  // hairline that never once spills onto the face. These break it: a parting
+  // cut back to the skin, locks hanging past the brow, a sideburn running
+  // down past the ear.
+  function capBreaks(c, rng, h, color, opt = {}) {
+    const { front, top } = h;
+    const k = h._s / 100;
+    if (front.length < 4 || top.length < 3) return;
+
+    if (rng.chance(0.32)) {
+      // a parting cut back to the skin
+      const ti = rng.i(1, top.length - 2);
+      const fi = Math.max(1, Math.min(front.length - 2, Math.round((1 - ti / (top.length - 1)) * (front.length - 1))));
+      const a = top[ti];
+      const b = front[fi];
+      const wdt = h._s * rng.f(0.03, 0.075);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const nx = -dy / d;
+      const ny = dx / d;
+      const deep = rng.f(0.55, 1.0);
+      const gap = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = (i / 6) * deep;
+        const wob = Math.sin(t * Math.PI) * wdt;
+        gap.push({ x: a.x + dx * t + nx * (wdt * 0.35 + wob), y: a.y + dy * t + ny * (wdt * 0.35 + wob) });
+      }
+      for (let i = 6; i >= 0; i--) {
+        const t = (i / 6) * deep;
+        const wob = Math.sin(t * Math.PI) * wdt;
+        gap.push({ x: a.x + dx * t - nx * (wdt * 0.35 + wob), y: a.y + dy * t - ny * (wdt * 0.35 + wob) });
+      }
+      inkFill(c, rng, gap, PAPER, 1, 1.1 * k);
+      refibre(c, rng, gap);
+      inkPoly(c, rng, gap.slice(0, 7), { w: 1.1 * k, dry: 1.2 });
+    }
+
+    // locks hanging past the hairline onto the forehead
+    const locks = rng.chance(0.55) ? rng.i(1, 3) : 0;
+    for (let i = 0; i < locks; i++) {
+      const fi = rng.i(1, front.length - 2);
+      const p = front[fi];
+      if (p.z !== undefined && p.z < 0.05) continue;
+      const drop = h._s * rng.f(0.1, 0.3);
+      const wdt = h._s * rng.f(0.035, 0.085);
+      const lean = rng.f(-0.5, 0.5);
+      const tip = { x: p.x + drop * lean, y: p.y + drop };
+      inkFill(c, rng, [
+        { x: p.x - wdt, y: p.y - wdt * 0.4 },
+        { x: p.x + wdt, y: p.y - wdt * 0.6 },
+        { x: tip.x + wdt * 0.18, y: tip.y },
+        { x: tip.x - wdt * 0.1, y: tip.y + wdt * 0.2 },
+      ], color, 1, 1.3 * k);
+    }
+
+    // a sideburn running down past the ear
+    if (rng.chance(0.3)) {
+      const end = rng.chance(0.5) ? front[0] : front[front.length - 1];
+      const drop = h._s * rng.f(0.16, 0.42);
+      const wdt = h._s * rng.f(0.05, 0.1);
+      inkFill(c, rng, [
+        { x: end.x - wdt, y: end.y },
+        { x: end.x + wdt, y: end.y },
+        { x: end.x + wdt * rng.f(0.2, 0.7), y: end.y + drop },
+        { x: end.x - wdt * rng.f(0.5, 1.0), y: end.y + drop * rng.f(0.8, 1.0) },
+      ], color, 1, 1.4 * k);
+    }
   }
 
   // Break one edge of a mass with outward stroke-ends, leaving the rest clean.
