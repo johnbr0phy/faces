@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>fit check</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <style>html,body{overflow:visible} .sheet{width:var(--w);height:var(--h)}</style>
+  <script>
+    (function(){
+      var q=new URLSearchParams(location.search);
+      var st=document.createElement("style");
+      st.textContent=":root{--w:"+(q.get("w")||390)+"px;--h:"+(q.get("h")||844)+"px}";
+      document.head.appendChild(st);
+    })();
+  </script>
+</head>
+<body>
+  <main class="sheet">
+    <span id="tally" class="sr">dude nº 1</span>
+    <canvas id="page"></canvas>
+    <button id="another" type="button"></button>
+    <a id="link-a" href="#"></a>
+    <a id="link-b" href="#"></a>
+  </main>
+  <script src="../dude.js"></script>
+  <script src="fit-check.js"></script>
+</body>
+</html>

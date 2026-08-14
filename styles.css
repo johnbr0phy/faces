@@ -10,17 +10,14 @@ html, body {
   height: 100%;
   background: var(--paper);
   color: var(--ink);
-}
-
-body {
-  min-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .sheet {
-  min-height: 100dvh;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  width: 100%;
+  height: 100dvh;
   background: var(--paper);
 }
 
@@ -33,76 +30,47 @@ body {
 }
 
 #page {
-  flex: 1 1 auto;
-  width: 100%;
-  height: calc(100dvh - 64px);
-  max-height: 920px;
   display: block;
+  width: 100%;
+  height: 100%;
   touch-action: manipulation;
 }
 
-.dock {
-  display: flex;
-  justify-content: center;
-  padding: 4px 16px 22px;
-}
-
-#another {
+/* Invisible hit areas sitting over the marks drawn on the paper. Their
+   positions are set from script to match exactly where the ink landed. */
+#another,
+#link-a,
+#link-b {
+  position: absolute;
   appearance: none;
   background: transparent;
-  border: none;
+  border: 0;
   padding: 0;
-  line-height: 0;
-  cursor: pointer;
-}
-
-#btnink {
-  display: block;
-  width: 150px;
-  height: 24px;
-}
-
-#another:hover { opacity: 0.7; }
-#another:active { transform: translateY(1px); }
-#another:focus-visible {
-  outline: 1px dashed var(--ink);
-  outline-offset: 4px;
-}
-
-@media (max-width: 640px) {
-  #page { height: calc(100dvh - 60px); }
-}
-
-body.plate .dock { display: none; }
-body.plate #page { height: 100dvh; max-height: none; }
-
-.credit {
-  position: fixed;
-  right: 14px;
-  bottom: 12px;
   margin: 0;
-  text-align: right;
-  opacity: 0.78;
-  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.credit a {
-  display: block;
-  line-height: 0;
-  text-decoration: none;
+/* The words themselves are ink, so a press cannot change them. A breath of
+   shadow on the paper under the thumb is the whole feedback. */
+#another:active,
+#link-a:active,
+#link-b:active { background: rgba(35, 32, 25, 0.08); }
+
+#another:focus-visible,
+#link-a:focus-visible,
+#link-b:focus-visible {
+  outline: 1px dashed var(--ink);
+  outline-offset: 3px;
 }
 
-.credit canvas {
-  display: block;
-  width: 190px;
-  height: 19px;
-  margin-left: auto;
-}
-
-.credit a:hover { opacity: 1; }
-
-body.plate .credit { display: none; }
-
-@media (max-width: 640px) {
-  .credit { font-size: 11px; right: 10px; bottom: 8px; }
+/* Measured, not typeset: script reads this box's height to find out how much
+   of the bottom of the sheet the phone's home indicator is sitting on. */
+#safe {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: env(safe-area-inset-bottom, 0px);
+  pointer-events: none;
 }

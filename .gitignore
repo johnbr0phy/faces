@@ -12,4 +12,12 @@ GAUNTLET.md
 GAUNTLET-OPUS.md
 REVIEW-GROK.md
 REVIEW-CODEX.md
+nose-notes.md
+names-notes.md
+codex-response.md
+grok-response.md
+codex-prompt.md
+codex-last-message.md
+_dbg*
+_hit*
 .grok/

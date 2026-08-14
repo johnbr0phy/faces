@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>a dude — size harness</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    html,body{overflow:visible}
+    .sheet{width:var(--w);height:var(--h);outline:2px solid #c00;outline-offset:0}
+    body.hit #another{background:rgba(255,0,0,.30)}
+    body.hit #link-a{background:rgba(0,90,255,.30)}
+    body.hit #link-b{background:rgba(0,190,0,.30)}
+  </style>
+  <script>
+    (function(){
+      var q=new URLSearchParams(location.search);
+      var w=q.get("w")||390, h=q.get("h")||844;
+      var st=document.createElement("style");
+      st.textContent=":root{--w:"+w+"px;--h:"+h+"px}";
+      document.head.appendChild(st);
+      if(q.get("hit")) document.addEventListener("DOMContentLoaded",function(){document.body.classList.add("hit");});
+    })();
+  </script>
+</head>
+<body>
+  <main class="sheet">
+    <span id="tally" class="sr">dude nº 1</span>
+    <canvas id="page" aria-label="A doodle of a person"></canvas>
+    <button id="another" type="button" aria-label="another dude"></button>
+    <a id="link-a" href="https://x.com/mannay/status/2087522034351796728" aria-label="inspired by mannay"></a>
+    <a id="link-b" href="https://x.com/johnbr0" aria-label="ruined by @johnbr0"></a>
+  </main>
+  <script src="../dude.js"></script>
+</body>
+</html>

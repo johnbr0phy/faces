@@ -1084,6 +1084,85 @@
 
 
   // ---------- head ----------
+  // His commonest nose is not a mark on the face at all: in three-quarter
+  // views the head's own contour runs down from the temple, bulges out a
+  // knuckle where the tip is, tucks back under, and carries on as the jaw.
+  // One unbroken stroke, nothing laid on top. This bends the hull to do it.
+  function noseBump(skull, hull, rng, out) {
+    const n = hull.length;
+    const outX = out.x;
+    const outY = out.y;
+    const mag = Math.hypot(outX, outY);
+    if (mag < skull.s * 0.06) return null; // too frontal for a profile nose
+    const t = out.tip;
+    const a0 = Math.atan2(t.y - skull.cy, t.x - skull.cx);
+    const i0 = Math.round(((a0 + Math.PI) / (Math.PI * 2)) * n);
+    const half = Math.max(2, Math.round(n * rng.f(0.035, 0.06)));
+    const reach = mag * rng.f(0.5, 0.95);
+    const lean = rng.f(-0.5, 0.5);
+    for (let k = -half; k <= half; k++) {
+      const j = (((i0 + k) % n) + n) % n;
+      const t = k / half;
+      // a knuckle, not a cone: full at the tip, tucked under just past it
+      const g = Math.exp(-t * t * 3.2) * (1 + lean * t);
+      const notch = t > 0.45 && t < 0.95 ? -0.28 * Math.sin(((t - 0.45) / 0.5) * Math.PI) : 0;
+      const p = hull[j];
+      const dx = p.x - skull.cx;
+      const dy = p.y - skull.cy;
+      const d = Math.hypot(dx, dy) || 1;
+      const k2 = (d + reach * (g + notch)) / d;
+      hull[j] = { x: skull.cx + dx * k2, y: skull.cy + dy * k2 };
+    }
+    return { i0, half, reach };
+  }
+
+  // which way, and how far, this face's nose points in screen space
+  function noseProfile(skull, d) {
+    const fy = d.faceY || 0;
+    const q0 = skull.project({ x: 0, y: -0.02 + fy, z: 0.72 });
+    const q1 = skull.project({ x: 0, y: -0.02 + fy, z: 1.34 });
+    // where the tip actually lands, not merely which way the face points —
+    // placing the contour bump from the forward vector alone put it at eye
+    // height on the side of the head instead of at the nose
+    const browP = skull.project({ x: 0, y: -0.3 + fy, z: 0.72 });
+    const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
+    const L = Math.hypot(chinP.x - browP.x, chinP.y - browP.y) || 1;
+    const drop = L * 0.62;
+    return {
+      x: q1.x - q0.x,
+      y: q1.y - q0.y,
+      tip: {
+        x: browP.x + ((chinP.x - browP.x) / L) * drop + (q1.x - q0.x) * 0.7,
+        y: browP.y + ((chinP.y - browP.y) / L) * drop + (q1.y - q0.y) * 0.7,
+      },
+    };
+  }
+
+  // A contour nose needs no bridge — only the small marks that say it is a
+  // nose and not a lump: an under-notch and a nostril, tucked back into the
+  // face from the tip.
+  function silhouetteNose(c, rng, skull, hull, bump, prof) {
+    const s = skull.s;
+    const n = hull.length;
+    const tip = hull[(((bump.i0 % n) + n) % n)];
+    const mag = Math.hypot(prof.x, prof.y) || 1;
+    const ux = prof.x / mag;
+    const uy = prof.y / mag;
+    const bx = -ux;
+    const by = -uy;
+    const w = s * 0.024;
+    const a = { x: tip.x + bx * s * 0.02 + uy * s * 0.05, y: tip.y + by * s * 0.02 - ux * s * 0.05 };
+    const b = { x: a.x + bx * s * rng.f(0.1, 0.2), y: a.y + by * s * rng.f(0.1, 0.2) + s * rng.f(0.02, 0.06) };
+    inkPoly(c, rng, [a, b], { w: w * rng.f(0.8, 1.1), dry: 0.6 });
+    if (rng.chance(0.7)) inkCirc(c, rng, b.x, b.y, s * rng.f(0.014, 0.026), w * 0.5, rng.chance(0.4));
+    const browP = skull.project({ x: 0, y: -0.3 + (skull.faceY || 0), z: 0.72 });
+    const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
+    let ax = chinP.x - browP.x;
+    let ay = chinP.y - browP.y;
+    const L = Math.hypot(ax, ay) || 1;
+    return { ax: ax / L, ay: ay / L, browP, base: L * 0.62, outer: null };
+  }
+
   function headFill(c, rng, skull, hull, skinWash) {
     inkFill(c, rng, hull, PAPER, 1, 0.6);
     refibre(c, rng, hull);
@@ -2125,15 +2204,24 @@
   // One heavy gesture from the brow to the tip. This is the mark that owns
   // the face: longer, blacker and more committed than anything else on it.
   // Everything else is a bystander.
+  // ---------- the nose ----------
+  // Catalogued off every reference plate. What was wrong before:
+  //
+  //   * it was one line. His are usually TWO — a wedge or a narrow column —
+  //     with the base a separate mark across the bottom.
+  //   * it started at the brow. His often start at the hairline and run
+  //     45-70% of the way to the chin.
+  //   * the base hooked to a random side. In every turned head the tip
+  //     protrudes toward the near side and the nostril hooks BACK INTO the
+  //     face. Getting that backwards is what made ours feel inside out.
   function drawNose(c, rng, skull, style, heavy) {
     const s = skull.s;
-    const w = s * 0.038 * (heavy ?? 1);
-
-    // Build the nose on the face's own vertical axis in screen space. Pinning
-    // raw 3D points works until the head turns, and then the nose walks off
-    // across the cheek. The axis turns with the skull; the nose rides it.
+    // his nose carries the same nib as the head outline, or a touch lighter,
+    // and is never the darkest thing on the face — the eyes usually are
+    const w = s * 0.029 * (heavy ?? 1);
     const fy = skull.faceY || 0;
-    const browP = skull.project({ x: rng.f(-0.05, 0.05), y: -0.24 + fy + rng.f(-0.05, 0.06), z: 0.72 });
+
+    const browP = skull.project({ x: 0, y: -0.24 + fy + rng.f(-0.16, 0.02), z: 0.72 });
     const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
     let ax = chinP.x - browP.x;
     let ay = chinP.y - browP.y;
@@ -2141,35 +2229,30 @@
     ax /= faceLen;
     ay /= faceLen;
 
-    const lean = rng.sign();
-    // The nose is never plumb with the head axis. Tilting it a few degrees is
-    // most of what sells a turn.
-    const tilt = rng.f(0.08, 0.3) * lean;
+    const tilt = rng.f(0.06, 0.24) * rng.sign();
     const ct = Math.cos(tilt);
     const st = Math.sin(tilt);
     const tx = ax * ct - ay * st;
     const ty = ax * st + ay * ct;
     ax = tx;
     ay = ty;
-    const off = rng.f(-0.1, 0.03) * s * lean - s * rng.f(0.02, 0.09) * lean;
-    const drop = faceLen * rng.f(0.34, 0.78);
-    const proj = rng.f(0.35, 0.95); // how far this particular nose sticks out
-    let outer = null;
 
-    // How far, and in which screen direction, this face's nose sticks OUT.
-    // Taken from the projection itself: the same point at z=0.72 and at
-    // z=1.3. Head-on that difference is almost nothing; in three-quarter view
-    // it is large and sideways, which is exactly when a nose should break the
-    // silhouette. A nose that never leaves the head is why ours read flat.
+    const drop = faceLen * rng.f(0.5, 0.8);
+    const proj = rng.f(0.35, 0.95);
+
+    // which way this face is pointing, taken from the projection
     const q0 = skull.project({ x: 0, y: -0.02 + fy, z: 0.72 });
     const q1 = skull.project({ x: 0, y: -0.02 + fy, z: 1.34 });
     const outX = q1.x - q0.x;
     const outY = q1.y - q0.y;
+    // the tip goes with the turn; the base hooks back into the face
+    const near = Math.abs(outX) > s * 0.02 ? Math.sign(outX) : rng.sign();
+    const back = -near;
+    const off = rng.f(-0.04, 0.04) * s + near * s * rng.f(0.04, 0.16);
 
     const A = (t, lat) => {
       const px = -ay;
       const py = ax;
-      // the protrusion ramps in from the brow and is full by the tip
       const g = Math.max(0, Math.min(1, t / (drop || 1)));
       const pr = Math.pow(g, 1.7) * proj;
       return {
@@ -2178,73 +2261,90 @@
       };
     };
 
-    if (style === "tri") {
-      // a wedge, drawn in two goes, never the same triangle twice
-      const apex = A(rng.f(-0.04, 0.06) * s, rng.f(-4, 4));
-      const wL = A(drop * rng.f(0.86, 1.0), -s * rng.f(0.12, 0.24) * lean);
-      const wR = A(drop * rng.f(0.9, 1.06), s * rng.f(0.14, 0.26) * lean);
-      inkPoly(c, rng, [apex, wL], { w: w * rng.f(0.8, 1.05), dry: 0.35 });
-      inkPoly(c, rng, [apex, wR], { w: w * rng.f(0.7, 0.95), dry: 0.4 });
-      if (rng.chance(0.78)) {
-        inkPoly(c, rng, [wL, A(drop * 1.02, rng.f(-3, 3)), wR], { w: w * rng.f(0.6, 0.9), dry: 0.5 });
+    let outer = null;
+    const wide = s * rng.f(0.1, 0.22);
+    const nostril = (p, r) => inkCirc(c, rng, p.x, p.y, s * r, w * 0.45, rng.chance(0.45));
+
+    // --- the base: one mark running back into the face, with an event at
+    // its inner end. Never symmetrical.
+    const drawBase = (lead, spread) => {
+      const b0 = A(drop, lead);
+      const b1 = A(drop - s * rng.f(0.0, 0.05), lead + back * spread);
+      inkPoly(c, rng, [b0, A(drop + s * rng.f(0.0, 0.04), lead + back * spread * 0.5), b1], {
+        w: w * rng.f(0.55, 0.85),
+        dry: 0.5,
+      });
+      if (rng.chance(0.62)) nostril(b1, rng.f(0.018, 0.032));
+      return [b0, b1];
+    };
+
+    if (style === "wedge") {
+      // two lines from a narrow top, diverging to a wide base. The leading
+      // edge is the profile — it is the one that leaves the head.
+      const top = A(0, back * s * rng.f(0.0, 0.04));
+      const lead = A(drop, near * wide * rng.f(0.55, 1.0));
+      const trail = A(drop * rng.f(0.9, 1.02), back * wide * rng.f(0.35, 0.8));
+      const leadRun = [top, A(drop * 0.55, near * wide * rng.f(0.2, 0.5)), lead];
+      inkPoly(c, rng, leadRun, { w, passes: 2, dry: 0.3 });
+      inkPoly(c, rng, [top, A(drop * 0.6, back * wide * rng.f(0.15, 0.45)), trail], { w: w * rng.f(0.6, 0.9), dry: 0.6 });
+      inkPoly(c, rng, [lead, A(drop + s * rng.f(0.0, 0.05), 0), trail], { w: w * rng.f(0.55, 0.8), dry: 0.5 });
+      if (rng.chance(0.6)) nostril(A(drop - s * 0.02, back * wide * 0.45), rng.f(0.016, 0.028));
+      outer = leadRun;
+    } else if (style === "column") {
+      // a narrow parallel-sided bridge, the base closed with a loop
+      const gap = s * rng.f(0.05, 0.1);
+      const a0 = [A(0, near * gap * 0.5), A(drop * 0.5, near * gap * rng.f(0.7, 1.1)), A(drop, near * gap)];
+      const b0 = [A(0, back * gap * 0.5), A(drop * 0.55, back * gap * rng.f(0.7, 1.1)), A(drop * rng.f(0.86, 0.98), back * gap)];
+      inkPoly(c, rng, a0, { w, passes: 2, dry: 0.3 });
+      inkPoly(c, rng, b0, { w: w * rng.f(0.6, 0.9), dry: 0.55 });
+      drawBase(near * gap, gap * rng.f(1.6, 2.6));
+      outer = a0;
+    } else if (style === "hook") {
+      const run = [];
+      const bend = rng.f(0.02, 0.08) * s * near;
+      for (let i = 0; i <= 7; i++) {
+        const u = i / 7;
+        run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.8)));
       }
-      if (rng.chance(0.4)) inkCirc(c, rng, wR.x, wR.y, s * 0.02, w * 0.45, true);
-      return { ax, ay, browP, base: drop , outer };
+      for (let i = 1; i <= 4; i++) {
+        const u = i / 4;
+        run.push(A(drop + s * 0.12 * Math.sin(u * Math.PI * 0.8), bend + back * s * rng.f(0.16, 0.26) * u));
+      }
+      inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
+      if (rng.chance(0.7)) nostril(run[run.length - 1], rng.f(0.016, 0.03));
+      outer = run;
+    } else if (style === "snub") {
+      const run = [A(0, 0), A(drop * 0.6, near * s * 0.02), A(drop, near * s * rng.f(0.02, 0.07))];
+      inkPoly(c, rng, run, { w: w * rng.f(0.8, 1.0), passes: 2, dry: 0.35 });
+      const t = A(drop * rng.f(1.0, 1.08), near * s * 0.03);
+      inkArc(c, rng, t.x, t.y, s * rng.f(0.05, 0.09), Math.PI + 0.2, -0.2, w * 0.7);
+      if (rng.chance(0.5)) nostril(A(drop, back * s * 0.06), rng.f(0.014, 0.024));
+      outer = run;
+    } else if (style === "nostrils") {
+      // barely a nose: a hint of bridge and two marks
+      if (rng.chance(0.7)) {
+        inkPoly(c, rng, [A(drop * 0.3, 0), A(drop * 0.8, near * s * 0.02)], { w: w * 0.5, dry: 0.9 });
+      }
+      // never a matched pair: one is bigger, lower and further out
+      nostril(A(drop, near * s * rng.f(0.05, 0.1)), rng.f(0.022, 0.036));
+      if (rng.chance(0.7)) nostril(A(drop - s * rng.f(0.02, 0.06), back * s * rng.f(0.02, 0.05)), rng.f(0.012, 0.022));
+      outer = null;
+    } else {
+      // the plain one: a long line down, a foot back into the face
+      const bend = rng.f(0.01, 0.06) * s * near;
+      const run = [];
+      const brk = rng.f(0.3, 0.5);
+      const kink = rng.f(0.3, 1.0) * s * 0.05 * back;
+      for (let i = 0; i <= 8; i++) {
+        const u = i / 8;
+        run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.85) + (u < brk ? (u / brk) * kink : kink * (1 - (u - brk) / (1 - brk)) * 0.2)));
+      }
+      inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
+      drawBase(bend, s * rng.f(0.1, 0.2));
+      outer = run;
     }
 
-    if (style === "blob") {
-      // no bridge at all: a lump and two nostrils
-      const t = A(drop * rng.f(0.7, 0.95), rng.f(-3, 3));
-      inkArc(c, rng, t.x, t.y, s * rng.f(0.09, 0.15), Math.PI + rng.f(0.1, 0.5), rng.f(-0.5, -0.1), w * 0.9);
-      inkCirc(c, rng, t.x - s * 0.06 * lean, t.y + s * 0.03, s * rng.f(0.018, 0.03), w * 0.5, true);
-      if (rng.chance(0.7)) inkCirc(c, rng, t.x + s * 0.07 * lean, t.y + s * 0.02, s * rng.f(0.015, 0.026), w * 0.45, true);
-      if (rng.chance(0.5)) inkPoly(c, rng, [A(0, rng.f(-3, 3)), A(drop * 0.45, rng.f(-4, 4))], { w: w * 0.5, dry: 0.9 });
-      return { ax, ay, browP, base: drop , outer };
-    }
-
-    if (style === "button") {
-      inkPoly(c, rng, [A(0, 0), A(drop * 0.55, rng.f(-2, 3))], { w: w * 0.75, dry: 0.6 });
-      const t = A(drop, 0);
-      inkCirc(c, rng, t.x, t.y, s * 0.085, w * 0.8);
-      return { ax, ay, browP, base: drop + s * 0.085 , outer };
-    }
-
-    // The long one: brow to tip in one run, but it BREAKS direction once at
-    // the bridge — a straight column reads as a glyph, not a nose.
-    const bend = rng.f(0.03, 0.11) * s * lean;
-    const brk = rng.f(0.3, 0.5); // where the dorsal break happens
-    const brkAmt = rng.f(0.35, 1.1) * s * 0.07 * -lean;
-    const run = [];
-    const nSeg = 9;
-    for (let i = 0; i <= nSeg; i++) {
-      const u = i / nSeg;
-      const kink = u < brk ? (u / brk) * brkAmt : brkAmt * (1 - (u - brk) / (1 - brk)) * 0.15;
-      run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.85) + kink));
-    }
-    // the tip turns under into the nostril — an arc, not a T-bar
-    const hookOut = (style === "hook" ? 0.3 : 0.2) * s;
-    const hookDrop = s * (style === "hook" ? 0.13 : 0.07);
-    const nH = 5;
-    for (let i = 1; i <= nH; i++) {
-      const u = i / nH;
-      run.push(A(drop + hookDrop * Math.sin(u * Math.PI * 0.9), bend + hookOut * lean * Math.sin(u * Math.PI * 0.62)));
-    }
-    inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
-    outer = run;
-
-    // the bottom has to have mass: the far wing, then a nostril
-    if (rng.chance(0.5)) {
-      const t0 = A(drop + s * 0.012, bend);
-      const t1 = A(drop - s * rng.f(0.02, 0.06), bend - s * rng.f(0.12, 0.2) * lean);
-      inkPoly(c, rng, [t0, A(drop + s * 0.002, bend - s * 0.07 * lean), t1], { w: w * 0.55, dry: 0.4 });
-    }
-    const nostril = A(drop - s * 0.008, bend + hookOut * 0.5 * lean);
-    inkCirc(c, rng, nostril.x, nostril.y, s * rng.f(0.018, 0.032), w * 0.5, true);
-    if (rng.chance(0.1)) {
-      const far = A(drop - s * 0.008, bend - s * 0.1 * lean);
-      inkCirc(c, rng, far.x, far.y, s * rng.f(0.012, 0.022), w * 0.4, true);
-    }
-    return { ax, ay, browP, base: drop + hookDrop, outer };
+    return { ax, ay, browP, base: drop + s * 0.04, outer };
   }
 
   function drawMouth(c, rng, skull, style, nose) {
@@ -3291,8 +3391,8 @@
     d.mouth = rng.pick(["line", "line", "smile", "smirk"]);
     d.beard = "none";
     d.colour = null;
-    d.nose = rng.pick(["long", "long", "hook"]);
-    d.noseHeavy = rng.f(1.2, 1.6);
+    d.nose = rng.pick(["silhouette", "line", "wedge", "column", "hook"]);
+    d.noseHeavy = rng.f(0.85, 1.1);
     d.hair = rng.pick(["thatch", "thatch", "comb", "comb", "buzz", "recede"]);
     d.brows = rng.pick(["flat", "none", "flat"]);
     d.yaw *= 0.7;
@@ -3318,8 +3418,8 @@
       d.yaw = rng.f(0.5, 0.78) * rng.sign();
       d.hair = rng.pick(["buzz", "comb", "bowl", "flat"]);
     } else if (hero === "nose") {
-      d.nose = rng.pick(["hook", "blob", "tri", "long"]);
-      d.noseHeavy = rng.f(1.7, 2.2);
+      d.nose = rng.pick(["silhouette", "wedge", "hook", "column", "snub"]);
+      d.noseHeavy = rng.f(1.05, 1.35);
       d.hair = rng.pick(["buzz", "comb", "recede", "bowl"]);
     }
 
@@ -3447,11 +3547,11 @@
       hairColor: rng.pick(["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"]),
       eyes,
       nose: rng.pick(
-        old ? ["long", "hook", "hook", "blob", "blob", "tri"]
-        : young ? ["button", "button", "tri", "long", "blob"]
-        : ["long", "long", "hook", "hook", "tri", "tri", "button", "blob"]
+        old ? ["wedge", "hook", "hook", "column", "line"]
+        : young ? ["snub", "snub", "nostrils", "line", "column"]
+        : ["line", "wedge", "hook", "column", "wedge", "snub"]
       ),
-      noseHeavy: rng.f(1.15, 1.9) * (old ? rng.f(1.08, 1.25) : young ? rng.f(0.85, 0.98) : 1),
+      noseHeavy: rng.f(0.85, 1.18) * (old ? rng.f(1.05, 1.15) : young ? rng.f(0.88, 1.0) : 1),
       mouth,
       beard,
       colour: rng.chance(0.4) ? rng.pick(["head", "head", "head", "body", "body", "behind"]) : null,
@@ -3488,12 +3588,13 @@
     }, rng), rng);
   }
 
-  function drawDude(c, R, dude, w, h) {
+  // The marks that make one dude, drawn about (cx, cy) at size s. Split out of
+  // drawDude so the identical strokes can be laid down twice: once into a
+  // throwaway bitmap, to find out how much room this particular dude needs —
+  // his hat, his swung arm, his shoes — and once for real. Nothing in here
+  // knows about the page, so the caller is free to put him where he fits.
+  function figureInk(c, R, dude, cx, cy, s) {
     const rng = R.mark;
-    paper(c, w, h, R.paper);
-    const s = dude.size;
-    const cx = w * rng.f(0.38, 0.48) + rng.f(-8, 8);
-    const cy = h * 0.225 + rng.f(-10, 10);
 
     const skull = new Skull(cx, cy, s, dude.yaw, dude.pitch, dude.roll, dude.ratio, dude.depth, {
       jaw: dude.jaw,
@@ -3535,12 +3636,17 @@
 
     const body = drawBody(c, R.body, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
     const hull = skull.silhouette();
+    const prof = noseProfile(skull, dude);
+    // His commonest nose is the contour itself, so bend the hull before it is
+    // filled or stroked and then draw no bridge at all.
+    const bump = dude.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
     headFill(c, rng, skull, hull, dude.skin);
-    // the nose is laid down first, because where it passes outside the head
-    // it becomes the silhouette and the skull line has to give way to it
-    const nose = drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
+    const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
     const ears = drawEars(c, rng, skull);
-    headOutline(c, rng, skull, hull, outlineGaps(skull, hull, [nose && nose.outer].concat(ears)));
+    // he draws it both ways: the outline gives way to the nose, or the head
+    // is a closed loop with the nose laid across it and nothing erased
+    const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
+    headOutline(c, rng, skull, hull, gaps);
     const inFront = [];
     const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront);
     drawBrows(c, rng, skull, dude.brows);
@@ -3559,39 +3665,259 @@
       colourPass(c, R.colour, s, targets);
     }
 
+    let inkRight = body.maxX;
+    for (const q of hull) if (q.x > inkRight) inkRight = q.x;
+    return { footY: body.footY, inkRight };
+  }
+
+  // ---------- the words on the paper ----------
+  //
+  // The button and the credit are written on the sheet in the same ink as the
+  // drawing, at a size you can actually read. They used to be separate little
+  // canvases sitting below the paper, which read as a web page with a picture
+  // on it rather than as one drawn page.
+  //
+  // Widths are estimated rather than measured: a glyph advances about 0.9 of
+  // its size and drawName adds a gap, so 0.95 per character with a little at
+  // the ends is close and always a shade generous.
+  const BTN_TEXT = "another dude";
+  const CREDITS = ["inspired by mannay", "ruined by @johnbr0"];
+
+  function inkWidth(text, size) {
+    return size * (text.length * 0.95 + 0.9);
+  }
+
+  // A phone parks its home indicator over the bottom of the sheet. The CSS
+  // holds the inset; this reads it back rather than guessing at a number.
+  const safeEl = document.getElementById("safe");
+  function safeBottom() {
+    return safeEl ? Math.min(48, safeEl.offsetHeight || 0) : 0;
+  }
+
+  // Worked out before anything is drawn, because the figure has to be fitted
+  // into whatever is left above it.
+  function footerLayout(w, h) {
+    const pad = Math.max(14, Math.min(w * 0.055, 34));
+    const inner = w - pad * 2;
+    // big enough to read on a phone, held back from shouting on a desktop,
+    // and never taller than the sheet can spare
+    const btn = Math.max(16, Math.min(30, inner / 13.2, h * 0.038));
+    const cred = Math.max(11.5, Math.min(btn * 0.72, inner / 19.6));
+    const credW = Math.max(inkWidth(CREDITS[0], cred), inkWidth(CREDITS[1], cred));
+    const btnW = inkWidth(BTN_TEXT, btn);
+    // side by side when the two columns fit with a gap worth the name, and
+    // stacked when they do not — a phone gets the label over the credit
+    const cols = btnW + credW + pad * 3 <= w;
+    // enough to clear the descenders on "inspired by" and "@johnbr0"
+    const credLead = cred * 1.95;
+    const bandH = cols
+      ? Math.max(btn * 1.5, credLead + cred * 1.45) + pad * 0.7
+      : btn * 1.9 + credLead + cred * 1.45 + pad * 0.4;
+    const bottom = h - Math.max(14, pad * 0.8) - safeBottom();
+    return { pad, btn, cred, btnW, credW, credLead, cols, bottom, top: bottom - bandH };
+  }
+
+  function drawFooter(c, seed, w, F) {
+    const hits = {};
+    const box = (x, y, adv, size, minH) => {
+      const bx = x - size * 0.6;
+      const by = y - size * 0.32;
+      const bw = adv + size * 1.2;
+      const bh = size * 1.75;
+      if (minH && bh < minH) {
+        return { x: bx, y: by - (minH - bh) / 2, w: bw, h: minH };
+      }
+      return { x: bx, y: by, w: bw, h: bh };
+    };
+
+    // x is the glyph's centre line, so half a letter is added to make the
+    // left margin on the page actually equal to the padding
+    if (F.cols) {
+      const bx = F.pad + F.btn * 0.5;
+      const by = F.top + (F.bottom - F.top - F.btn * 1.5) * 0.5 + F.btn * 0.1;
+      const adv = drawName(c, rngFor(seed, "footer", 0), BTN_TEXT, bx, by, F.btn, { caps: false, rule: true, w: 0.075 });
+      hits.another = box(bx, by, adv, F.btn, 44);
+      const rx = w - F.pad - F.credW + F.cred * 0.5;
+      const ry = F.top + (F.bottom - F.top - (F.credLead + F.cred * 1.45)) * 0.5 + F.cred * 0.1;
+      CREDITS.forEach((t, i) => {
+        const y = ry + i * F.credLead;
+        const a = drawName(c, rngFor(seed, "footer", i + 1), t, rx, y, F.cred, { caps: false, rule: false, w: 0.07 });
+        hits[i ? "b" : "a"] = box(rx, y, a, F.cred, F.credLead);
+      });
+    } else {
+      const bx = F.pad + F.cred * 0.5;
+      const by = F.top + F.btn * 0.25;
+      const adv = drawName(c, rngFor(seed, "footer", 0), BTN_TEXT, bx, by, F.btn, { caps: false, rule: true, w: 0.075 });
+      hits.another = box(bx, by, adv, F.btn, 44);
+      const ry = by + F.btn * 1.9;
+      CREDITS.forEach((t, i) => {
+        const y = ry + i * F.credLead;
+        const a = drawName(c, rngFor(seed, "footer", i + 1), t, bx, y, F.cred, { caps: false, rule: false, w: 0.07 });
+        hits[i ? "b" : "a"] = box(bx, y, a, F.cred, F.credLead);
+      });
+    }
+    return hits;
+  }
+
+  // ---------- fitting him on the page ----------
+  //
+  // How tall a dude comes out is not a constant. A hat, a swung arm and a
+  // long pair of legs between them move the top and the bottom by most of a
+  // head, so a fixed size either clips someone on a phone or leaves half the
+  // sheet empty on a desktop. He is therefore drawn once, at a canonical
+  // size, into an offscreen bitmap that is never shown, and his ink is
+  // measured. The page then scales that measurement to whatever room it has.
+  //
+  // He is always drawn at CANON and scaled by the canvas transform, never by
+  // passing a different s. The nib resamples in user units, so changing s
+  // changes how many random numbers a stroke consumes, and the measured dude
+  // would no longer be the dude that got drawn. Under a transform the stream
+  // is identical, so the measurement is exact rather than approximate.
+  const CANON = 110;
+  let measCv = null;
+  const extentCache = new Map();
+
+  function figureExtent(seed, dude) {
+    const key = seed >>> 0;
+    const hit = extentCache.get(key);
+    if (hit) return hit;
+    // generous enough that nothing can run off the edge of the measuring
+    // sheet and be measured short
+    const mw = CANON * 11;
+    const mh = CANON * 13;
+    const ox = mw * 0.5;
+    const oy = CANON * 3;
+    // if the pixels cannot be read back, assume a big dude rather than a
+    // clipped one
+    let ext = { up: CANON * 1.35, down: CANON * 6.3, left: CANON * 2.1, right: CANON * 2.1 };
+    try {
+      if (!measCv) measCv = document.createElement("canvas");
+      measCv.width = mw;
+      measCv.height = mh;
+      const mc = measCv.getContext("2d", { willReadFrequently: true });
+      mc.setTransform(1, 0, 0, 1, 0, 0);
+      mc.clearRect(0, 0, mw, mh);
+      // Both passes must draw about the SAME origin, not merely at the same
+      // size. The nib skips a stroke where the paper tooth is high, and the
+      // tooth is sampled in user coordinates — draw him somewhere else on the
+      // sheet and a different set of marks survives, which consumes a
+      // different number of random numbers and hands back a different dude.
+      // So the offset goes in the transform and he is always drawn at 0, 0.
+      mc.setTransform(1, 0, 0, 1, ox, oy);
+      const MR = { mark: rngFor(seed, "mark"), body: rngFor(seed, "body"), colour: rngFor(seed, "colour") };
+      figureInk(mc, MR, dude, 0, 0, CANON);
+      const d = mc.getImageData(0, 0, mw, mh).data;
+      let x0 = mw;
+      let y0 = mh;
+      let x1 = -1;
+      let y1 = -1;
+      for (let y = 0, p = 3; y < mh; y++) {
+        for (let x = 0; x < mw; x++, p += 4) {
+          if (d[p] > 12) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      if (x1 > x0 && y1 > y0) {
+        const m = { up: oy - y0, down: y1 - oy, left: ox - x0, right: x1 - ox };
+        // if his ink reached the edge of the measuring sheet he is bigger
+        // than what was measured, so that side falls back to the safe guess
+        if (y0 <= 0) m.up = Math.max(m.up, ext.up);
+        if (y1 >= mh - 1) m.down = Math.max(m.down, ext.down);
+        if (x0 <= 0) m.left = Math.max(m.left, ext.left);
+        if (x1 >= mw - 1) m.right = Math.max(m.right, ext.right);
+        ext = m;
+      }
+    } catch (e) {
+      /* keep the conservative fallback */
+    }
+    if (extentCache.size > 48) extentCache.clear();
+    extentCache.set(key, ext);
+    return ext;
+  }
+
+  function drawDude(c, R, dude, w, h, seed) {
+    paper(c, w, h, R.paper);
+    const foot = footerLayout(w, h);
+    // Placement draws from its own stream. It used to come off "mark", which
+    // meant the measuring pass and the real pass were no longer the same dude
+    // — and it is the wrong stream anyway: where he stands on the sheet is
+    // not one of his marks.
+    const rng = R.place;
+    const ext = figureExtent(seed, dude);
+
+    // room kept under the feet for a name written down there, so the fit is
+    // the same whichever gap the hand picks later
+    const nameRoom = CANON * 0.62;
+    const mx = Math.max(12, Math.min(w * 0.05, 40));
+    const top = Math.max(10, Math.min(h * 0.035, 34));
+    const availH = Math.max(80, foot.top - top);
+    const availW = Math.max(80, w - mx * 2);
+    // a slight person is still drawn a little smaller than a heavy one — the
+    // old absolute sizes, kept as a proportion of whatever the sheet allows
+    const rel = 0.88 + 0.12 * Math.max(0, Math.min(1, (dude.size - 98) / 28));
+    const k = Math.min(availH / (ext.up + ext.down + nameRoom), availW / (ext.left + ext.right), 1.5) * rel;
+    const s = CANON * k;
+
+    // he sits left of centre, the way a hand starts a figure with the margin
+    // for a name still in mind — but only as far as there is room for
+    const loX = mx + ext.left * k;
+    const hiX = w - mx - ext.right * k;
+    let cx = w * rng.f(0.38, 0.48) + rng.f(-8, 8);
+    cx = hiX < loX ? (loX + hiX) / 2 : Math.max(loX, Math.min(hiX, cx));
+    let cy = top + ext.up * k + rng.f(0, Math.max(0, availH - (ext.up + ext.down + nameRoom) * k));
+
+    c.save();
+    c.translate(cx, cy);
+    c.scale(k, k);
+    const fig = figureInk(c, R, dude, 0, 0, CANON);
+    c.restore();
+
+    const footY = cy + fig.footY * k;
+    const inkRight = cx + fig.inkRight * k;
+    const bodyMaxX = inkRight;
+
     // The name goes where there is room, the way a hand writes it in the gap
     // it finds — not pinned at the same offset off the jaw every time.
-    const size = rng.f(21, 32);
+    let size = s * rng.f(0.19, 0.29);
+    const nameLen = String(dude.name).length;
+    // and it never grows wider than the sheet, however small the sheet is
+    size = Math.min(size, (w - mx * 2) / (nameLen * 0.95 + 0.8));
     // keep it clear of the silhouette — a name cutting through a shoulder
     // is the one thing a person writing it would never do
     const spot = rng.pick(["jaw", "jaw", "shoulder", "feet", "feet"]);
+    // the lowest a baseline can go and still leave the descenders clear of the
+    // footer band
+    const lowY = foot.top - size * 1.95;
     let nameX;
     let nameY;
     if (spot === "feet") {
       nameX = cx + s * rng.f(-1.4, 0.5);
-      nameY = Math.min(h - size * 2.1, body.footY + s * rng.f(0.28, 0.7));
+      nameY = Math.min(lowY, footY + s * rng.f(0.28, 0.7));
     } else if (spot === "shoulder") {
-      nameX = Math.max(body.maxX + s * rng.f(0.14, 0.4), cx + s * 1.35);
+      nameX = Math.max(bodyMaxX + s * rng.f(0.14, 0.4), cx + s * 1.35);
       nameY = cy + s * rng.f(1.6, 2.4);
     } else {
-      nameX = Math.max(body.maxX + s * rng.f(0.1, 0.32), cx + s * 1.15);
+      nameX = Math.max(bodyMaxX + s * rng.f(0.1, 0.32), cx + s * 1.15);
       nameY = cy + s * rng.f(0.0, 0.55);
     }
-    // clear the whole drawing. Measuring against the body alone let the name
-    // start inside an ear on a wide head.
-    let inkRight = body.maxX;
-    for (const q of hull) if (q.x > inkRight) inkRight = q.x;
     if (spot !== "feet") nameX = Math.max(nameX, inkRight + s * rng.f(0.12, 0.34));
-    const nameW = size * (String(dude.name).length * 0.92 + 0.6);
-    if (spot !== "feet" && nameX + nameW > w - 12) {
+    const nameW = size * (nameLen * 0.95 + 0.8);
+    if (spot !== "feet" && nameX + nameW > w - mx) {
       // no room in the margin, so it goes under the feet
-      nameX = Math.max(16, cx + s * rng.f(-1.4, 0.3));
-      nameY = Math.min(h - size * 2.1, body.footY + s * rng.f(0.28, 0.7));
+      nameX = Math.max(mx, cx + s * rng.f(-1.4, 0.3));
+      nameY = Math.min(lowY, footY + s * rng.f(0.28, 0.7));
     }
-    nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
-    nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
+    nameX = Math.max(mx * 0.6 + size * 0.6, Math.min(w - nameW - mx * 0.5, nameX));
+    nameY = Math.max(size * 0.9, Math.min(lowY, nameY));
     drawName(c, R.name, dude.name, nameX, nameY, size);
+
+    const hits = drawFooter(c, seed, w, foot);
     grainPass(c, c.__dpr);
+    return hits;
   }
 
   // ---------- colour ----------
@@ -3761,10 +4087,13 @@
         skull.gaze = d.gaze;
         skull.eyeGap = d.eyeGap;
         const hull = skull.silhouette();
+        const prof = noseProfile(skull, d);
+        const bump = d.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
         headFill(c, rng, skull, hull, d.skin);
-        const nose = drawNose(c, rng, skull, d.nose, d.noseHeavy);
+        const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, d.nose, d.noseHeavy);
         const ears = drawEars(c, rng, skull);
-        headOutline(c, rng, skull, hull, outlineGaps(skull, hull, [nose && nose.outer].concat(ears)));
+        const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
+        headOutline(c, rng, skull, hull, gaps);
         const inFront = [];
         const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront);
         drawBrows(c, rng, skull, d.brows);
@@ -3795,47 +4124,28 @@
   }
 
   // ---------- app ----------
-  // The button is written in the same ink as the drawing. Typeset Georgia
-  // next to a pen drawing gives the whole page away.
-  const btnCanvas = document.getElementById("btnink");
-
-  function drawButton(seed) {
-    if (!btnCanvas) return;
-    const bc = btnCanvas.getContext("2d");
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = 300;
-    const h = 48;
-    btnCanvas.width = Math.round(w * dpr);
-    btnCanvas.height = Math.round(h * dpr);
-    bc.setTransform(dpr, 0, 0, dpr, 0, 0);
-    bc.clearRect(0, 0, w, h);
-    const rng = new Rng(seed >>> 0);
-    drawName(bc, rng, "another dude", 8, 7, 25, { caps: false, rule: true, w: 0.05 });
-  }
-
   const PLATE = !!new URLSearchParams(location.search).get("plate");
   if (PLATE) document.body.classList.add("plate");
-  // The credit is written with the same nib as the drawing. Georgia in the
-  // corner of a pen-and-ink page is the same tell the button used to be.
-  function drawCredit(seed) {
-    [
-      ["credit-a", "inspired by mannay"],
-      ["credit-b", "ruined by @johnbr0"],
-    ].forEach(([id, text], i) => {
-      const cv = document.getElementById(id);
-      if (!cv) return;
-      const bc = cv.getContext("2d");
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      // identical size and stroke weight to the button, then scaled down in
-      // CSS — so the letterforms match rather than merely coming from the
-      // same function at a different size
-      const w = 430;
-      const h = 44;
-      cv.width = Math.round(w * dpr);
-      cv.height = Math.round(h * dpr);
-      bc.setTransform(dpr, 0, 0, dpr, 0, 0);
-      bc.clearRect(0, 0, w, h);
-      drawName(bc, rngFor(seed, "credit", i), text, 8, 7, 25, { caps: false, rule: false, w: 0.05 });
+
+  const links = { another: btn, a: document.getElementById("link-a"), b: document.getElementById("link-b") };
+
+  // The words are ink on the paper, so the button and the links are invisible
+  // boxes laid over exactly where that ink landed — the page stays one
+  // drawing and the thing is still clickable and reachable by keyboard.
+  function placeHits(hits) {
+    Object.keys(links).forEach((id) => {
+      const el = links[id];
+      const b = hits && hits[id];
+      if (!el) return;
+      if (!b) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "block";
+      el.style.left = `${Math.round(b.x)}px`;
+      el.style.top = `${Math.round(b.y)}px`;
+      el.style.width = `${Math.round(b.w)}px`;
+      el.style.height = `${Math.round(b.h)}px`;
     });
   }
 
@@ -3851,20 +4161,25 @@
       body: rngFor(seed, "body"),
       name: rngFor(seed, "name"),
       colour: rngFor(seed, "colour"),
+      place: rngFor(seed, "place"),
     };
     const dude = makeDude(R.person);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const cssW = canvas.clientWidth || 720;
-    const cssH = canvas.clientHeight || 920;
+    // the real CSS box, so the sheet is the window and nothing is drawn off it
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(240, Math.round(rect.width || canvas.clientWidth || 720));
+    const cssH = Math.max(320, Math.round(rect.height || canvas.clientHeight || 920));
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.__dpr = dpr;
-    if (PLATE) drawPlate(ctx, cssW, cssH, seed);
-    else drawDude(ctx, R, dude, cssW, cssH);
+    if (PLATE) {
+      drawPlate(ctx, cssW, cssH, seed);
+      placeHits(null);
+    } else {
+      placeHits(drawDude(ctx, R, dude, cssW, cssH, seed));
+    }
     count += 1;
-    drawButton(seed ^ 0x9e3779b9);
-    drawCredit(seed);
     tallyEl.textContent = `dude nº ${count}`;
     const url = new URL(location.href);
     url.searchParams.set("s", String(seed));
@@ -3882,13 +4197,31 @@
       another();
     }
   });
+  // A phone fires resize for the address bar sliding away. Redrawing the whole
+  // sheet for a few pixels of height is both slow and visibly wrong, so only a
+  // real change in the box counts, and only once it has settled.
   let resizeTimer;
-  window.addEventListener("resize", () => {
+  let lastW = 0;
+  let lastH = 0;
+  function onResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
+      const r = canvas.getBoundingClientRect();
+      const w = Math.round(r.width);
+      const h = Math.round(r.height);
+      if (Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 24) return;
+      lastW = w;
+      lastH = h;
       count -= 1;
       render(seed);
-    }, 80);
-  });
+    }, 120);
+  }
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
+  {
+    const r = canvas.getBoundingClientRect();
+    lastW = Math.round(r.width);
+    lastH = Math.round(r.height);
+  }
   render(seed);
 })();

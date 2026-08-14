@@ -9,14 +9,16 @@
 <body>
   <main class="sheet">
     <span id="tally" class="sr">dude nº 1</span>
-    <canvas id="page" width="720" height="920" aria-label="A doodle of a person"></canvas>
-    <footer class="dock">
-      <button id="another" type="button" aria-label="another dude"><canvas id="btnink" width="300" height="48"></canvas></button>
-    </footer>
-    <p class="credit">
-      <a href="https://x.com/mannay/status/2087522034351796728" target="_blank" rel="noopener" aria-label="inspired by mannay"><canvas id="credit-a" width="430" height="44"></canvas></a>
-      <a href="https://x.com/johnbr0" target="_blank" rel="noopener" aria-label="ruined by @johnbr0"><canvas id="credit-b" width="430" height="44"></canvas></a>
-    </p>
+    <canvas id="page" aria-label="A doodle of a person"></canvas>
+    <!-- Everything is drawn on the paper. These sit invisibly on top of where
+         it is drawn, so the label is a real button and the credits are real
+         links without anything being typeset. -->
+    <button id="another" type="button" aria-label="another dude"></button>
+    <a id="link-a" href="https://x.com/mannay/status/2087522034351796728" target="_blank" rel="noopener" aria-label="inspired by mannay"></a>
+    <a id="link-b" href="https://x.com/johnbr0" target="_blank" rel="noopener" aria-label="ruined by @johnbr0"></a>
+    <!-- A phone puts a home indicator over the bottom of the sheet. This is
+         measured rather than guessed, and the footer is kept above it. -->
+    <i id="safe" aria-hidden="true"></i>
   </main>
   <script src="dude.js"></script>
 </body>
