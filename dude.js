@@ -423,6 +423,8 @@
       c.restore();
     }
 
+    loadMass(c, rng, inset, bite, opt.load ?? rng.f(0.72, 0.9));
+
     const step = Math.max(1.6, bite * 0.55);
     const walk = resample(pts.concat([pts[0]]), step);
     for (let i = 0; i < walk.length; i++) {
@@ -476,6 +478,39 @@
     for (let i = 0; i < Math.round(area / 145); i++) {
       c.fillStyle = rng.chance(0.6) ? "rgba(48,36,22,0.06)" : "rgba(255,255,255,0.07)";
       c.fillRect(rng.f(x0, x1), rng.f(y0, y1), rng.f(0.3, 1.2), rng.f(0.25, 0.8));
+    }
+    c.restore();
+  }
+
+  // Paper showing through a laid-down mass. Held next to the reference, the
+  // same black cap is a dense stipple at roughly 70-85% loading, not a flat
+  // fill — and a flat fill is what made our darkest faces twice as inky.
+  function loadMass(c, rng, pts, bite, load) {
+    if (!pts || pts.length < 3) return;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const q of pts) {
+      if (q.x < x0) x0 = q.x;
+      if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y;
+      if (q.y > y1) y1 = q.y;
+    }
+    const area = (x1 - x0) * (y1 - y0);
+    if (!isFinite(area) || area < 400) return;
+    c.save();
+    c.beginPath();
+    pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
+    c.closePath();
+    c.clip();
+    const holes = Math.round((area * (1 - load)) / Math.max(1.2, bite * 0.5));
+    for (let i = 0; i < holes; i++) {
+      c.fillStyle = PAPER;
+      c.globalAlpha = rng.f(0.45, 0.92);
+      c.beginPath();
+      c.ellipse(rng.f(x0, x1), rng.f(y0, y1), bite * rng.f(0.12, 0.4), bite * rng.f(0.1, 0.32), rng.f(0, 3), 0, Math.PI * 2);
+      c.fill();
     }
     c.restore();
   }
@@ -907,6 +942,17 @@
       return { x: this.cx + dx * k, y: this.cy + dy * k, z: p.z, front: p.front };
     }
 
+    // Area enclosed by the outline, for measuring what sits on top of it.
+    hullArea() {
+      const rr = this._rad;
+      if (!rr) return 0;
+      const n = rr.length;
+      const d = (Math.PI * 2) / n;
+      let A = 0;
+      for (let i = 0; i < n; i++) A += 0.5 * rr[i] * rr[i] * d;
+      return A;
+    }
+
     // Radius of the outline at a given screen angle.
     radAt(a) {
       const rr = this._rad;
@@ -1057,9 +1103,9 @@
     const w0 = skull.s * 0.03 * (skull.pen || 1);
     const cranium = arc(-ov, Math.round(n * 0.5) + ov);
     const jaw = arc(Math.round(n * 0.5) - ov, n + ov);
-    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.82, 1.0), dry: 0.3, doubled: rng.chance(0.35) });
-    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.45, 1.95), dry: 0.2, doubled: rng.chance(0.45) });
-    if (rng.chance(0.35)) {
+    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.8, 0.95), dry: 0.35, doubled: rng.chance(0.22) });
+    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.2, 1.55), dry: 0.25, doubled: rng.chance(0.3) });
+    if (rng.chance(0.12)) {
       // a cheek restated on one side only
       const a0 = Math.round(n * rng.f(0.02, 0.12));
       inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.7, dry: 0.9 });
@@ -1259,7 +1305,7 @@
     // per-seed volume and reach, on top of whatever the style asked for, so
     // the same cap does not come out at forty scales and rotations
     opt = Object.assign({}, opt, {
-      puff: (opt.puff ?? 0.05) * rng.f(1.05, 2.4),
+      puff: (opt.puff ?? 0.05) * rng.f(0.7, 1.25),
       // u spans (t-0.5)*PI*wrap*1.9, so wrap above ~1.05 sends the hairline
       // round the back of the skull and the mass swallows the whole face
       wrap: Math.min(1.05, (opt.wrap ?? 1.02) * rng.f(0.84, 1.08)),
@@ -1273,6 +1319,33 @@
     let top = crownArc(skull, hull, a, b, puff, rng);
     if (top.length < 2) return null;
     top = outerProfile(top, skull, rng, opt);
+
+    // Cap the mass against the head it sits on. Measured against the
+    // reference, our blackest faces carried nearly twice his ink — his
+    // darkest is 22% of its cell, ours reached 43%. The cause was not the
+    // number of marks but a black cap covering half a skull. If the mass is
+    // too big a share of the head, the crown edge is pulled back toward the
+    // hairline until it is not.
+    const cap = opt.areaCap ?? 0.5;
+    const headA = skull.hullArea();
+    if (headA > 0) {
+        for (let pass = 0; pass < 6; pass++) {
+        const m = front.concat(top);
+        let A = 0;
+        for (let i = 0; i < m.length; i++) {
+          const q = m[i];
+          const r = m[(i + 1) % m.length];
+          A += q.x * r.y - r.x * q.y;
+        }
+        A = Math.abs(A) / 2;
+        if (A <= headA * cap) break;
+        const k = Math.sqrt((headA * cap) / A);
+        top = top.map((q, i) => {
+          const f = front[Math.min(front.length - 1, Math.round((1 - i / (top.length - 1 || 1)) * (front.length - 1)))];
+          return { x: f.x + (q.x - f.x) * k, y: f.y + (q.y - f.y) * k };
+        });
+      }
+    }
     return { front, top, mass: front.concat(top) };
   }
 
@@ -1322,7 +1395,7 @@
       // piled up over one temple and falling away
       const at = rng.f(0.12, 0.42);
       const w = rng.f(0.1, 0.3);
-      const h = s * rng.f(0.16, 0.42);
+      const h = s * rng.f(0.1, 0.26);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         const g = Math.exp(-Math.pow((t - at) / w, 2));
@@ -1334,7 +1407,7 @@
       // always outward — a negative height used to push that side inside the
       // skull and could fold the hair polygon over itself. Direction is a
       // choice of which temple is high, not a sign flip.
-      const h = s * rng.f(0.1, 0.32);
+      const h = s * rng.f(0.07, 0.2);
       const flip = rng.chance(0.5);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
@@ -1344,7 +1417,7 @@
     }
     if (kind === "dome") {
       // volume all round, falling off at the temples
-      const h = s * rng.f(0.14, 0.4);
+      const h = s * rng.f(0.09, 0.25);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         return push(p, h * Math.sin(t * Math.PI));
@@ -1353,7 +1426,7 @@
     if (kind === "sweep") {
       // combed hard to one side: long over one temple, cropped at the other
       const dir = rng.chance(0.5) ? 1 : -1;
-      const h = s * rng.f(0.12, 0.34);
+      const h = s * rng.f(0.08, 0.22);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         const u = dir > 0 ? t : 1 - t;
@@ -1381,6 +1454,7 @@
     // The hairline is a decision — a clean, committed cut across the face.
     // Only the outer edge is ragged, and only where the hair ends.
     inkFill(c, rng, mass, color, 1, (opt.rag ?? 2.0) * k * 0.7);
+    loadMass(c, rng, mass, (opt.rag ?? 2.0) * k * 1.6, opt.load ?? rng.f(0.7, 0.88));
     ragEdge(c, rng, top, h._cx, h._cy, (opt.rag ?? 2.0) * k * 1.5, color);
     inkPoly(c, rng, front, { w: (opt.edge ?? 2.5) * k, dry: 0.5 });
     capBreaks(c, rng, h, color, opt);
@@ -1397,7 +1471,7 @@
     const k = h._s / 100;
     if (front.length < 4 || top.length < 3) return;
 
-    if (rng.chance(0.32)) {
+    if (rng.chance(0.2)) {
       // a parting cut back to the skin
       const ti = rng.i(1, top.length - 2);
       const fi = Math.max(1, Math.min(front.length - 2, Math.round((1 - ti / (top.length - 1)) * (front.length - 1))));
@@ -1427,7 +1501,7 @@
     }
 
     // locks hanging past the hairline onto the forehead — these sit in front
-    const locks = rng.chance(0.55) ? rng.i(1, 3) : 0;
+    const locks = rng.chance(0.3) ? rng.i(1, 2) : 0;
     for (let i = 0; i < locks; i++) {
       const fi = rng.i(1, front.length - 2);
       const p = front[fi];
@@ -1445,7 +1519,7 @@
     }
 
     // a sideburn running down past the ear
-    if (rng.chance(0.3)) {
+    if (rng.chance(0.16)) {
       const end = rng.chance(0.5) ? front[0] : front[front.length - 1];
       const drop = h._s * rng.f(0.16, 0.42);
       const wdt = h._s * rng.f(0.05, 0.1);
@@ -1479,7 +1553,7 @@
   // different lengths. An even fringe of identical bristles round the whole
   // outline is the single clearest sign nobody drew this.
   function strayHairs(c, rng, h, opt = {}) {
-    const budget = opt.strays ?? 6;
+    const budget = Math.round((opt.strays ?? 6) * 0.6);
     if (budget <= 0 || !h.top.length) return;
     const k = h._s / 100;
     const tufts = rng.i(1, 3);
@@ -1734,7 +1808,7 @@
     }
 
     if (style === "beanie") {
-      const h = mk({ lineY: -0.44, bangs: 0.03, puff: 0.2, wob: 0.015, outer: "dome" });
+      const h = mk({ lineY: -0.44, bangs: 0.03, puff: 0.2, wob: 0.015, outer: "dome", areaCap: 0.62 });
       if (h) {
         inkMassFill(c, rng, h.mass, color, { bite: s * 0.028 });
         // knit ribbing runs with the dome, not straight down
@@ -1756,7 +1830,7 @@
     }
 
     if (style === "flat") {
-      const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02, outer: "flattop" });
+      const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02, outer: "flattop", areaCap: 0.58 });
       if (h) {
         inkMass(c, rng, h, color, { strays: 0, rag: 1.1, edge: 3.2 });
         const brim = brimPts(skull, h, rng.f(0.3, 0.62), rng);
@@ -1771,7 +1845,7 @@
     }
 
     if (style === "baseball") {
-      const h = mk({ lineY: -0.44, puff: 0.15, wob: 0.015, outer: "dome" });
+      const h = mk({ lineY: -0.44, puff: 0.15, wob: 0.015, outer: "dome", areaCap: 0.62 });
       if (h) {
         // wipe first: a fill at a third opacity leaves the skull line showing
         // straight through the hat
@@ -2084,14 +2158,14 @@
     inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
 
     // the bottom has to have mass: the far wing, then a nostril
-    if (rng.chance(0.72)) {
+    if (rng.chance(0.5)) {
       const t0 = A(drop + s * 0.012, bend);
       const t1 = A(drop - s * rng.f(0.02, 0.06), bend - s * rng.f(0.12, 0.2) * lean);
       inkPoly(c, rng, [t0, A(drop + s * 0.002, bend - s * 0.07 * lean), t1], { w: w * 0.55, dry: 0.4 });
     }
     const nostril = A(drop - s * 0.008, bend + hookOut * 0.5 * lean);
     inkCirc(c, rng, nostril.x, nostril.y, s * rng.f(0.018, 0.032), w * 0.5, true);
-    if (rng.chance(0.3)) {
+    if (rng.chance(0.1)) {
       const far = A(drop - s * 0.008, bend - s * 0.1 * lean);
       inkCirc(c, rng, far.x, far.y, s * rng.f(0.012, 0.022), w * 0.4, true);
     }
@@ -2170,7 +2244,7 @@
       inkPoly(c, rng, [F(-wide * rng.f(0.7, 1.0), rng.f(-1, 2)), F(s * rng.f(-0.03, 0.05), rng.f(-2, 2)), F(wide * rng.f(0.6, 1.0), rng.f(-3, 2))], { w, dry: 0.4 });
     }
     // corner marks — a mouth ends somewhere, it does not just stop
-    if (rng.chance(0.6)) {
+    if (rng.chance(0.3)) {
       const side = rng.sign();
       const ca = side * s * rng.f(0.11, 0.19);
       const c0 = onSurface(ML, ca, rng.f(-2, 1));
@@ -3117,6 +3191,76 @@
     };
   }
 
+  // ---------- house style ----------
+  // A plate is one person sitting down forty-eight times, not forty-eight
+  // auditions. Every previous round answered "it reads as a template" by
+  // adding another axis of variation; this does the opposite.
+  //
+  // One hero per face. Everything else drops to a default. The sheet gets
+  // quieter and more the same, which is the point — a slightly dull face is
+  // rest, and rest is what lets the eye move across a sheet.
+  function applyHouseStyle(d, rng) {
+    const hero = rng.pick([
+      "hair", "hair", "hair",
+      "hat", "hat",
+      "glasses", "patch", "beard", "bald", "turn", "nose",
+    ]);
+    d.hero = hero;
+
+    // --- defaults: dumb, small, and out of the way ---
+    d.eyes = rng.pick(["open", "open", "dot", "bare"]);
+    d.mouth = rng.pick(["line", "line", "smile", "smirk"]);
+    d.beard = "none";
+    d.colour = null;
+    d.nose = rng.pick(["long", "long", "hook"]);
+    d.noseHeavy = rng.f(1.2, 1.6);
+    d.hair = rng.pick(["thatch", "thatch", "comb", "comb", "buzz", "recede"]);
+    d.brows = rng.pick(["flat", "none", "flat"]);
+    d.yaw *= 0.7;
+
+    // --- then turn exactly one thing up ---
+    if (hero === "hair") {
+      d.hair = rng.pick(["messy", "spiky", "curly", "side", "bowl", "thatch", "comb"]);
+    } else if (hero === "hat") {
+      d.hair = rng.pick(["beanie", "flat", "baseball", "band"]);
+    } else if (hero === "glasses") {
+      d.eyes = "glasses";
+      d.hair = rng.pick(["comb", "buzz", "recede", "bowl"]);
+    } else if (hero === "patch") {
+      d.eyes = rng.pick(["patch", "shades", "wink"]);
+      d.hair = rng.pick(["comb", "buzz", "bowl"]);
+    } else if (hero === "beard") {
+      d.beard = rng.pick(["beard", "stache", "goatee"]);
+      d.hair = rng.pick(["recede", "buzz", "comb", "bald"]);
+    } else if (hero === "bald") {
+      d.hair = rng.pick(["bald", "bald", "recede"]);
+      d.brows = rng.pick(["angry", "arch", "flat"]);
+    } else if (hero === "turn") {
+      d.yaw = rng.f(0.5, 0.78) * rng.sign();
+      d.hair = rng.pick(["buzz", "comb", "bowl", "flat"]);
+    } else if (hero === "nose") {
+      d.nose = rng.pick(["hook", "blob", "tri", "long"]);
+      d.noseHeavy = rng.f(1.7, 2.2);
+      d.hair = rng.pick(["buzz", "comb", "recede", "bowl"]);
+    }
+
+    // colour is a decision too, and rarely: his sheet is one face in five
+    if (rng.chance(0.2)) d.colour = rng.pick(["head", "head", "behind"]);
+
+    // --- clamp the ensemble. Per-face ink variance is the generator look:
+    // his sd is about 5, ours ran 8-9 by letting scale be a personality trait.
+    d.size = 112 * rng.f(0.93, 1.07);
+    d.ratio = Math.max(0.9, Math.min(1.16, d.ratio));
+    d.crown = Math.max(0.88, Math.min(1.14, d.crown));
+    d.jaw = Math.max(0.88, Math.min(1.22, d.jaw));
+    d.chin = Math.max(-0.04, Math.min(0.14, d.chin));
+    d.lobeAmp = Math.min(d.lobeAmp, 0.055);
+    d.jawTaper = Math.max(0.72, Math.min(1.0, d.jawTaper));
+    d.pinch = Math.max(0.12, Math.min(0.34, d.pinch));
+    d.pen = rng.f(0.98, 1.12);
+    return d;
+  }
+
   function makeDude(rng) {
     const P = makePerson(rng);
     const old = P.age === "old";
@@ -3211,7 +3355,7 @@
       : P.bearing === "slumped" ? rng.pick(["pockets", "down", "folded"])
       : rng.pick(["down", "down", "pockets", "hips", "folded"]);
 
-    return applyQuirk({
+    return applyHouseStyle(applyQuirk({
       person: P,
       name: rng.chance(0.55) ? rng.pick(FIRST) : `${rng.pick(FIRST)} ${rng.pick(LAST)}`,
       yaw: rng.f(-0.75, 0.75),
@@ -3262,7 +3406,7 @@
       flatA: rng.f(-Math.PI, Math.PI),
       pen: rng.f(0.9, 1.22),
       brows,
-    }, rng);
+    }, rng), rng);
   }
 
   function drawDude(c, R, dude, w, h) {
@@ -3425,12 +3569,12 @@
       // rows drift and crowd the way a hand fills a page
       const rowDx = rng0.f(-10, 10);
       const rowDy = rng0.f(-7, 7);
-      const rowS = rng0.f(0.9, 1.1);
+      const rowS = rng0.f(0.96, 1.04);
       for (let col = 0; col < cols; col++) {
         const idx = r * cols + col;
         const d = makeDude(rngFor(seed0, "person", idx));
         const rng = rngFor(seed0, "mark", idx);
-        const s = Math.min(cw, ch) * rng.f(0.27, 0.37) * rowS;
+        const s = Math.min(cw, ch) * rng.f(0.305, 0.345) * rowS;
         const cx = Math.max(s * 1.15, Math.min(w - s * 1.15, cw * (col + 0.5) + rowDx + rng.f(-7, 7)));
         const cy = Math.max(s * 1.2, Math.min(h - s * 1.3, 18 + ch * (r + 0.5) + rowDy + rng.f(-8, 8)));
         const skull = new Skull(cx, cy, s, d.yaw, d.pitch, d.roll, d.ratio, d.depth, {
@@ -3453,7 +3597,7 @@
         drawFacialHair(c, rng, skull, d.beard);
         drawMouth(c, rng, skull, d.mouth, nose);
         inFront.forEach((f) => f());
-        if (rng.chance(0.5)) drawNeck(c, rng, skull);
+        if (rng.chance(0.3)) drawNeck(c, rng, skull);
         if (d.colour) {
           if (d.colour === "behind") {
             const blob = [];
