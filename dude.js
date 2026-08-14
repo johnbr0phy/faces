@@ -3746,18 +3746,17 @@
       if (!cv) return;
       const bc = cv.getContext("2d");
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const w = 300;
-      const h = 30;
+      // identical size and stroke weight to the button, then scaled down in
+      // CSS — so the letterforms match rather than merely coming from the
+      // same function at a different size
+      const w = 430;
+      const h = 44;
       cv.width = Math.round(w * dpr);
       cv.height = Math.round(h * dpr);
       bc.setTransform(dpr, 0, 0, dpr, 0, 0);
       bc.clearRect(0, 0, w, h);
-      drawCreditLine(bc, rngFor(seed, "credit", i), text);
+      drawName(bc, rngFor(seed, "credit", i), text, 8, 7, 25, { caps: false, rule: false, w: 0.05 });
     });
-  }
-
-  function drawCreditLine(bc, rng, text) {
-    drawName(bc, rng, text, 4, 5, 15, { caps: false, rule: false, w: 0.075 });
   }
 
   let count = 0;
