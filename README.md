@@ -38,9 +38,9 @@ dude is reproducible.
 
 `a  make him move` and `m  something else` are written under the label at the
 foot of the page, in the same hand as everything else, and pressing the words
-does what pressing the key does — a phone has no A to press. `?anim=1` starts
-him moving, and `?m=walk|wave|jump|look|dance|shrug` insists on one; without
-`?m` he does whatever his seed says he does.
+does what pressing the key does — a phone has no A to press. He starts moving.
+`?anim=0` holds him still. `?m=walk|wave|jump|look|dance|shrug` insists on one;
+without `?m` he does whatever his seed says he does.
 
 He is not a picture being tweened. The head is already a skull with a yaw, a
 pitch and a roll, and the body is already a stick rig the silhouette is grown

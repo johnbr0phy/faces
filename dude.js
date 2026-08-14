@@ -5420,9 +5420,9 @@
   const Q = new URLSearchParams(location.search);
   const PLATE = !!Q.get("plate");
   if (PLATE) document.body.classList.add("plate");
-  // ?anim=1 to start moving, ?m=wave to insist on one. Without ?m he does
-  // whatever his seed says he does, which is most of the fun of it.
-  let animOn = Q.get("anim") === "1" || Q.get("anim") === "true";
+  // He moves unless you ask him not to. ?anim=0 holds him still. ?m=wave
+  // insists on one thing; without ?m his seed picks.
+  let animOn = Q.get("anim") !== "0" && Q.get("anim") !== "false";
   const forcedMotion = MOTIONS[Q.get("m")] ? Q.get("m") : null;
   // ?ph=0.25 freezes the cycle at one phase, so a frame can be looked at
   // properly instead of being caught in passing
