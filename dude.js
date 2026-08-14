@@ -266,6 +266,22 @@
       c.ellipse(q.x + rng.f(-1, 1), q.y + rng.f(-1, 1), W[k] * rng.f(0.8, 1.5), W[k] * rng.f(0.7, 1.2), rng.f(0, 3), 0, Math.PI * 2);
       c.fill();
     }
+    // The sheet bites back into the mark itself, not only in a pass over the
+    // whole page afterwards. Localising it per stroke is the difference
+    // between ink on paper and a filled vector shape.
+    if (w > 1.1) {
+      for (let k = 1; k < n - 1; k += 2) {
+        if (!live[k] || !rng.chance(0.3)) continue;
+        const hw = W[k] * 0.5;
+        const u = (rng.chance(0.5) ? 1 : -1) * rng.f(0.72, 1.12);
+        const sz = W[k] * rng.f(0.18, 0.42);
+        c.fillStyle = PAPER;
+        c.globalAlpha = rng.f(0.35, 0.8);
+        c.fillRect(P[k].x + NN[k].x * hw * u - sz / 2, P[k].y + NN[k].y * hw * u - sz / 2, sz, sz);
+      }
+      c.fillStyle = opt.color ?? INK;
+      c.globalAlpha = opt.alpha ?? 1;
+    }
     // pools where the nib lingered
     for (let k = 3; k < n - 3; k += 2) {
       if (!live[k] || W[k] < w * 1.3) continue;
@@ -280,6 +296,25 @@
   // A stroke plus optional restatement — the line the hand went back over.
   function stroke(c, rng, path, opt = {}) {
     const passes = opt.passes ?? 1;
+    // A long contour is not one pull. It arrives in two or three goes that
+    // overlap at the joins, each at its own weight — which is why his
+    // outlines fray rather than close.
+    if (opt.broken !== false && !opt.closed && path.length >= 10 && rng.chance(0.42)) {
+      const segs = rng.i(2, 3);
+      const n = path.length;
+      for (let i = 0; i < segs; i++) {
+        const a = Math.max(0, Math.floor((n * i) / segs - n * 0.05));
+        const b = Math.min(n, Math.floor((n * (i + 1)) / segs + n * 0.09));
+        const part = path.slice(a, b);
+        if (part.length < 2) continue;
+        nib(c, rng, part, {
+          ...opt,
+          w: (opt.w ?? 1.8) * rng.f(0.72, 1.22),
+          dry: (opt.dry ?? 1) * rng.f(0.8, 1.25),
+        });
+      }
+      return;
+    }
     nib(c, rng, path, opt);
     // A contour the hand traced twice all the way round. Every head in the
     // reference plates is two lines that touch and part, not one.
@@ -304,7 +339,12 @@
       const b = path[path.length - 1];
       const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       const g = (opt.w ?? 1.8) * rng.f(1.2, 4.5);
-      nib(c, rng, [b, { x: b.x + ((b.x - a.x) / d) * g, y: b.y + ((b.y - a.y) / d) * g }], {
+      // A flick of the wrist curves. Running the overshoot straight along the
+      // tangent is what made ours read as a plotted extension.
+      const vx = (b.x - a.x) / d;
+      const vy = (b.y - a.y) / d;
+      const f = g * rng.f(-0.55, 0.55);
+      nib(c, rng, [b, { x: b.x + vx * g - vy * f, y: b.y + vy * g + vx * f }], {
         w: (opt.w ?? 1.8) * rng.f(0.4, 0.75),
         color: opt.color,
         dry: 1.4,
@@ -1090,30 +1130,55 @@
   // One unbroken stroke, nothing laid on top. This bends the hull to do it.
   function noseBump(skull, hull, rng, out) {
     const n = hull.length;
-    const outX = out.x;
-    const outY = out.y;
-    const mag = Math.hypot(outX, outY);
-    if (mag < skull.s * 0.06) return null; // too frontal for a profile nose
+    const s = skull.s;
+    const mag = Math.hypot(out.x, out.y);
+    if (mag < s * 0.06) return null; // too frontal for a profile nose
+    const ux = out.x / mag;
+    const uy = out.y / mag;
     const t = out.tip;
-    const a0 = Math.atan2(t.y - skull.cy, t.x - skull.cx);
-    const i0 = Math.round(((a0 + Math.PI) / (Math.PI * 2)) * n);
-    const half = Math.max(2, Math.round(n * rng.f(0.035, 0.06)));
-    const reach = mag * rng.f(0.5, 0.95);
-    const lean = rng.f(-0.5, 0.5);
+    const ax = out.ax ?? 0;
+    const ay = out.ay ?? 1;
+
+    // The knuckle belongs on whichever contour point sits furthest FORWARD at
+    // nose height. Taking the hull index from the angle between the head's
+    // centre and the tip put it wherever that interior point happened to lie —
+    // at the eye on one face, on the jaw on the next.
+    const band = s * 0.34;
+    let i0 = -1;
+    let best = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const dx = hull[i].x - t.x;
+      const dy = hull[i].y - t.y;
+      const along = dx * ax + dy * ay;
+      if (Math.abs(along) > band) continue;
+      const sc = dx * ux + dy * uy - Math.abs(along) * 0.85;
+      if (sc > best) {
+        best = sc;
+        i0 = i;
+      }
+    }
+    if (i0 < 0) return null;
+
+    // Walking the hull forwards runs chinward on a right-facing head and
+    // browward on a left-facing one. Without this the undercut landed ABOVE
+    // the tip on half the heads and the knuckle read as two lumps.
+    const nx = hull[(i0 + 1) % n].x - hull[(i0 - 1 + n) % n].x;
+    const ny = hull[(i0 + 1) % n].y - hull[(i0 - 1 + n) % n].y;
+    const dir = nx * ax + ny * ay >= 0 ? 1 : -1;
+
+    const half = Math.max(2, Math.round(n * rng.f(0.04, 0.065)));
+    const reach = Math.max(s * 0.09, Math.min(s * 0.3, mag * rng.f(0.55, 1.0)));
+    const lean = rng.f(-0.4, 0.4);
     for (let k = -half; k <= half; k++) {
       const j = (((i0 + k) % n) + n) % n;
-      const t = k / half;
-      // a knuckle, not a cone: full at the tip, tucked under just past it
-      const g = Math.exp(-t * t * 3.2) * (1 + lean * t);
-      const notch = t > 0.45 && t < 0.95 ? -0.28 * Math.sin(((t - 0.45) / 0.5) * Math.PI) : 0;
-      const p = hull[j];
-      const dx = p.x - skull.cx;
-      const dy = p.y - skull.cy;
-      const d = Math.hypot(dx, dy) || 1;
-      const k2 = (d + reach * (g + notch)) / d;
-      hull[j] = { x: skull.cx + dx * k2, y: skull.cy + dy * k2 };
+      const u = (k / half) * dir; // +1 is chinward, whichever way the head faces
+      // a knuckle, not a cone: full at the tip, cut back hard just under it
+      const g = Math.exp(-u * u * 3.0) * (1 + lean * u);
+      const notch = u > 0.3 && u < 0.9 ? -0.34 * Math.sin(((u - 0.3) / 0.6) * Math.PI) : 0;
+      const e = reach * (g + notch);
+      hull[j] = { x: hull[j].x + ux * e, y: hull[j].y + uy * e };
     }
-    return { i0, half, reach };
+    return { i0, half, reach, dir, ux, uy };
   }
 
   // which way, and how far, this face's nose points in screen space
@@ -1121,19 +1186,23 @@
     const fy = d.faceY || 0;
     const q0 = skull.project({ x: 0, y: -0.02 + fy, z: 0.72 });
     const q1 = skull.project({ x: 0, y: -0.02 + fy, z: 1.34 });
-    // where the tip actually lands, not merely which way the face points —
-    // placing the contour bump from the forward vector alone put it at eye
-    // height on the side of the head instead of at the nose
-    const browP = skull.project({ x: 0, y: -0.3 + fy, z: 0.72 });
+    // where the tip actually lands, not merely which way the face points
+    const browP = skull.project({ x: 0, y: -0.22 + fy, z: 0.72 });
     const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
     const L = Math.hypot(chinP.x - browP.x, chinP.y - browP.y) || 1;
-    const drop = L * 0.62;
+    const ax = (chinP.x - browP.x) / L;
+    const ay = (chinP.y - browP.y) / L;
+    const drop = L * 0.6;
     return {
       x: q1.x - q0.x,
       y: q1.y - q0.y,
+      ax,
+      ay,
+      len: L,
+      browP,
       tip: {
-        x: browP.x + ((chinP.x - browP.x) / L) * drop + (q1.x - q0.x) * 0.7,
-        y: browP.y + ((chinP.y - browP.y) / L) * drop + (q1.y - q0.y) * 0.7,
+        x: browP.x + ax * drop + (q1.x - q0.x) * 0.7,
+        y: browP.y + ay * drop + (q1.y - q0.y) * 0.7,
       },
     };
   }
@@ -1144,23 +1213,39 @@
   function silhouetteNose(c, rng, skull, hull, bump, prof) {
     const s = skull.s;
     const n = hull.length;
-    const tip = hull[(((bump.i0 % n) + n) % n)];
-    const mag = Math.hypot(prof.x, prof.y) || 1;
-    const ux = prof.x / mag;
-    const uy = prof.y / mag;
-    const bx = -ux;
-    const by = -uy;
-    const w = s * 0.024;
-    const a = { x: tip.x + bx * s * 0.02 + uy * s * 0.05, y: tip.y + by * s * 0.02 - ux * s * 0.05 };
-    const b = { x: a.x + bx * s * rng.f(0.1, 0.2), y: a.y + by * s * rng.f(0.1, 0.2) + s * rng.f(0.02, 0.06) };
-    inkPoly(c, rng, [a, b], { w: w * rng.f(0.8, 1.1), dry: 0.6 });
-    if (rng.chance(0.7)) inkCirc(c, rng, b.x, b.y, s * rng.f(0.014, 0.026), w * 0.5, rng.chance(0.4));
-    const browP = skull.project({ x: 0, y: -0.3 + (skull.faceY || 0), z: 0.72 });
-    const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
-    let ax = chinP.x - browP.x;
-    let ay = chinP.y - browP.y;
-    const L = Math.hypot(ax, ay) || 1;
-    return { ax: ax / L, ay: ay / L, browP, base: L * 0.62, outer: null };
+    const tip = hull[((bump.i0 % n) + n) % n];
+    const ux = bump.ux;
+    const uy = bump.uy;
+    const ax = prof.ax;
+    const ay = prof.ay;
+    const w = s * 0.023;
+
+    // The contour has already said everything but the underside. One crease
+    // running back from under the tip, and a nostril where it stops.
+    const a = {
+      x: tip.x - ux * s * rng.f(0.02, 0.06) + ax * s * rng.f(0.03, 0.07),
+      y: tip.y - uy * s * rng.f(0.02, 0.06) + ay * s * rng.f(0.03, 0.07),
+    };
+    const back = s * rng.f(0.08, 0.17);
+    const b = { x: a.x - ux * back + ax * s * rng.f(0.0, 0.04), y: a.y - uy * back + ay * s * rng.f(0.0, 0.04) };
+    inkPoly(c, rng, [a, { x: (a.x + b.x) / 2 - ax * s * 0.012, y: (a.y + b.y) / 2 - ay * s * 0.012 }, b], {
+      w: w * rng.f(0.8, 1.1),
+      dry: 0.6,
+    });
+    if (rng.chance(0.6)) inkCirc(c, rng, b.x, b.y, s * rng.f(0.013, 0.024), w * 0.5, rng.chance(0.4));
+    // sometimes the bridge is carried back up the inside of the contour
+    if (rng.chance(0.3)) {
+      const u0 = { x: tip.x - ux * s * rng.f(0.01, 0.04), y: tip.y - uy * s * rng.f(0.01, 0.04) };
+      const u1 = {
+        x: u0.x - ax * s * rng.f(0.22, 0.4) - ux * s * rng.f(0.02, 0.08),
+        y: u0.y - ay * s * rng.f(0.22, 0.4) - uy * s * rng.f(0.02, 0.08),
+      };
+      inkPoly(c, rng, [u1, u0], { w: w * rng.f(0.5, 0.75), dry: 0.9 });
+    }
+
+    const bp = prof.browP;
+    const drop = Math.max(s * 0.4, (tip.x - bp.x) * ax + (tip.y - bp.y) * ay);
+    return { ax, ay, browP: bp, base: drop + s * 0.05, outer: null };
   }
 
   function headFill(c, rng, skull, hull, skinWash) {
@@ -2216,31 +2301,35 @@
   //     face. Getting that backwards is what made ours feel inside out.
   function drawNose(c, rng, skull, style, heavy) {
     const s = skull.s;
-    // his nose carries the same nib as the head outline, or a touch lighter,
-    // and is never the darkest thing on the face — the eyes usually are
-    const w = s * 0.029 * (heavy ?? 1);
+    // The nose is never the darkest mark on the face. The head outline runs
+    // s*0.03; this stays under it, and takes one pass, not two.
+    const w = s * 0.026 * Math.min(1.2, heavy ?? 1);
     const fy = skull.faceY || 0;
 
-    const browP = skull.project({ x: 0, y: -0.24 + fy + rng.f(-0.16, 0.02), z: 0.72 });
+    const browRef = skull.project({ x: 0, y: -0.22 + fy, z: 0.72 });
     const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
-    let ax = chinP.x - browP.x;
-    let ay = chinP.y - browP.y;
+    let ax = chinP.x - browRef.x;
+    let ay = chinP.y - browRef.y;
     const faceLen = Math.hypot(ax, ay) || 1;
     ax /= faceLen;
     ay /= faceLen;
 
-    const tilt = rng.f(0.06, 0.24) * rng.sign();
+    const tilt = rng.f(0.05, 0.2) * rng.sign();
     const ct = Math.cos(tilt);
     const st = Math.sin(tilt);
     const tx = ax * ct - ay * st;
-    const ty = ax * st + ay * ct;
+    ay = ax * st + ay * ct;
     ax = tx;
-    ay = ty;
 
-    const drop = faceLen * rng.f(0.5, 0.8);
+    // He starts the nose at the brow or just under it — never up the
+    // forehead — and stops it well clear of the chin.
+    const head = faceLen * rng.f(0.0, 0.13);
+    const browP = { x: browRef.x + ax * head, y: browRef.y + ay * head };
+    // 50-80% of brow-to-chin, two draws averaged so it piles up near 65%
+    let drop = faceLen * (rng.f(0.5, 0.8) + rng.f(0.56, 0.74)) * 0.5;
+    drop = Math.max(faceLen * 0.34, Math.min(drop, faceLen * 0.86 - head));
     const proj = rng.f(0.35, 0.95);
 
-    // which way this face is pointing, taken from the projection
     const q0 = skull.project({ x: 0, y: -0.02 + fy, z: 0.72 });
     const q1 = skull.project({ x: 0, y: -0.02 + fy, z: 1.34 });
     const outX = q1.x - q0.x;
@@ -2248,7 +2337,7 @@
     // the tip goes with the turn; the base hooks back into the face
     const near = Math.abs(outX) > s * 0.02 ? Math.sign(outX) : rng.sign();
     const back = -near;
-    const off = rng.f(-0.04, 0.04) * s + near * s * rng.f(0.04, 0.16);
+    const off = rng.f(-0.035, 0.035) * s + near * s * rng.f(0.02, 0.12);
 
     const A = (t, lat) => {
       const px = -ay;
@@ -2261,90 +2350,132 @@
       };
     };
 
+    if (style === "none") return { ax, ay, browP, base: drop, outer: null };
+
     let outer = null;
-    const wide = s * rng.f(0.1, 0.22);
+    let bottom = drop;
     const nostril = (p, r) => inkCirc(c, rng, p.x, p.y, s * r, w * 0.45, rng.chance(0.45));
 
-    // --- the base: one mark running back into the face, with an event at
-    // its inner end. Never symmetrical.
-    const drawBase = (lead, spread) => {
-      const b0 = A(drop, lead);
-      const b1 = A(drop - s * rng.f(0.0, 0.05), lead + back * spread);
-      inkPoly(c, rng, [b0, A(drop + s * rng.f(0.0, 0.04), lead + back * spread * 0.5), b1], {
-        w: w * rng.f(0.55, 0.85),
-        dry: 0.5,
-      });
-      if (rng.chance(0.62)) nostril(b1, rng.f(0.018, 0.032));
-      return [b0, b1];
+    // The move that makes a nose out of a stick: a hard corner at the tip and
+    // a real run back into the face, a third to a half of the bridge length,
+    // finished with an event. His base is never a token flick.
+    const baseRun = drop * rng.f(0.34, 0.58);
+    const foot = (lead, run) => {
+      const pts = [
+        A(drop + s * rng.f(0.0, 0.035), lead + back * run * 0.5),
+        A(drop + s * rng.f(-0.01, 0.02), lead + back * run),
+      ];
+      const end = rng.f(0, 1);
+      if (end < 0.45) {
+        pts.push(A(drop - s * rng.f(0.05, 0.11), lead + back * run * rng.f(0.85, 1.05))); // far wing flicks up
+      } else if (end < 0.75) {
+        pts.push(A(drop + s * rng.f(0.03, 0.07), lead + back * run * 0.72)); // or curls into a bulb
+        pts.push(A(drop - s * rng.f(0.0, 0.03), lead + back * run * 0.5));
+      }
+      return pts;
     };
 
     if (style === "wedge") {
-      // two lines from a narrow top, diverging to a wide base. The leading
-      // edge is the profile — it is the one that leaves the head.
-      const top = A(0, back * s * rng.f(0.0, 0.04));
-      const lead = A(drop, near * wide * rng.f(0.55, 1.0));
-      const trail = A(drop * rng.f(0.9, 1.02), back * wide * rng.f(0.35, 0.8));
-      const leadRun = [top, A(drop * 0.55, near * wide * rng.f(0.2, 0.5)), lead];
-      inkPoly(c, rng, leadRun, { w, passes: 2, dry: 0.3 });
-      inkPoly(c, rng, [top, A(drop * 0.6, back * wide * rng.f(0.15, 0.45)), trail], { w: w * rng.f(0.6, 0.9), dry: 0.6 });
-      inkPoly(c, rng, [lead, A(drop + s * rng.f(0.0, 0.05), 0), trail], { w: w * rng.f(0.55, 0.8), dry: 0.5 });
-      if (rng.chance(0.6)) nostril(A(drop - s * 0.02, back * wide * 0.45), rng.f(0.016, 0.028));
+      // narrow at the top, WIDE at the base — the base is most of the shape
+      const top = A(0, back * s * rng.f(0.0, 0.035));
+      const wideB = Math.max(baseRun, drop * rng.f(0.4, 0.62));
+      const leadRun = [top, A(drop * 0.55, near * wideB * rng.f(0.12, 0.3)), A(drop, near * wideB * rng.f(0.35, 0.5))];
+      leadRun.push(A(drop + s * rng.f(0.0, 0.04), near * wideB * 0.1));
+      leadRun.push(A(drop + s * rng.f(-0.01, 0.02), back * wideB * rng.f(0.45, 0.7)));
+      if (rng.chance(0.55)) leadRun.push(A(drop - s * rng.f(0.05, 0.1), back * wideB * rng.f(0.5, 0.7)));
+      inkPoly(c, rng, leadRun, { w, dry: 0.3, doubled: rng.chance(0.25) });
+      // the far edge exists only in the lower half, never as a mirrored leg
+      if (rng.chance(0.6)) {
+        inkPoly(c, rng, [A(drop * rng.f(0.3, 0.5), back * wideB * rng.f(0.1, 0.25)), A(drop * rng.f(0.88, 1.0), back * wideB * rng.f(0.4, 0.62))], {
+          w: w * rng.f(0.55, 0.8),
+          dry: 0.65,
+        });
+      }
+      if (rng.chance(0.5)) nostril(A(drop - s * 0.02, back * wideB * 0.45), rng.f(0.015, 0.026));
       outer = leadRun;
     } else if (style === "column") {
-      // a narrow parallel-sided bridge, the base closed with a loop
-      const gap = s * rng.f(0.05, 0.1);
-      const a0 = [A(0, near * gap * 0.5), A(drop * 0.5, near * gap * rng.f(0.7, 1.1)), A(drop, near * gap)];
-      const b0 = [A(0, back * gap * 0.5), A(drop * 0.55, back * gap * rng.f(0.7, 1.1)), A(drop * rng.f(0.86, 0.98), back * gap)];
-      inkPoly(c, rng, a0, { w, passes: 2, dry: 0.3 });
-      inkPoly(c, rng, b0, { w: w * rng.f(0.6, 0.9), dry: 0.55 });
-      drawBase(near * gap, gap * rng.f(1.6, 2.6));
-      outer = a0;
+      // a squared U with unequal legs: a long near side, a base, and a far
+      // side that only exists in the bottom third
+      const gap = s * rng.f(0.045, 0.085);
+      const run = [A(0, near * gap * 0.4), A(drop * 0.5, near * gap * rng.f(0.8, 1.15)), A(drop, near * gap)];
+      const runB = baseRun * rng.f(0.9, 1.2) + gap;
+      run.push(A(drop + s * rng.f(0.0, 0.03), near * gap + back * runB * 0.55));
+      run.push(A(drop + s * rng.f(-0.01, 0.02), near * gap + back * runB));
+      run.push(A(drop * rng.f(0.6, 0.78), near * gap + back * runB * rng.f(0.9, 1.05)));
+      inkPoly(c, rng, run, { w, dry: 0.3, doubled: rng.chance(0.2) });
+      if (rng.chance(0.5)) nostril(A(drop - s * 0.02, near * gap + back * runB * 0.75), rng.f(0.014, 0.026));
+      outer = run;
     } else if (style === "hook") {
+      const bend = rng.f(0.03, 0.09) * s * near;
       const run = [];
-      const bend = rng.f(0.02, 0.08) * s * near;
       for (let i = 0; i <= 7; i++) {
         const u = i / 7;
-        run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.8)));
+        run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.75)));
       }
-      for (let i = 1; i <= 4; i++) {
-        const u = i / 4;
-        run.push(A(drop + s * 0.12 * Math.sin(u * Math.PI * 0.8), bend + back * s * rng.f(0.16, 0.26) * u));
-      }
-      inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
-      if (rng.chance(0.7)) nostril(run[run.length - 1], rng.f(0.016, 0.03));
+      // the beak drops past the base line and curls back under itself
+      run.push(A(drop + s * rng.f(0.05, 0.1), bend + near * s * rng.f(0.0, 0.03)));
+      run.push(A(drop + s * rng.f(0.03, 0.08), bend + back * baseRun * 0.6));
+      run.push(A(drop - s * rng.f(0.0, 0.04), bend + back * baseRun * rng.f(0.9, 1.15)));
+      inkPoly(c, rng, run, { w, dry: 0.25, doubled: rng.chance(0.25) });
+      if (rng.chance(0.6)) nostril(run[run.length - 1], rng.f(0.015, 0.028));
+      bottom = drop + s * 0.1;
       outer = run;
     } else if (style === "snub") {
-      const run = [A(0, 0), A(drop * 0.6, near * s * 0.02), A(drop, near * s * rng.f(0.02, 0.07))];
-      inkPoly(c, rng, run, { w: w * rng.f(0.8, 1.0), passes: 2, dry: 0.35 });
-      const t = A(drop * rng.f(1.0, 1.08), near * s * 0.03);
-      inkArc(c, rng, t.x, t.y, s * rng.f(0.05, 0.09), Math.PI + 0.2, -0.2, w * 0.7);
-      if (rng.chance(0.5)) nostril(A(drop, back * s * 0.06), rng.f(0.014, 0.024));
+      // a tip that is drawn round, not a stick with a dot under it
+      const d2 = drop * rng.f(0.72, 0.88);
+      const r = Math.max(s * 0.085, d2 * rng.f(0.3, 0.42));
+      const run = [A(0, 0), A(d2 * 0.6, near * s * 0.02), A(d2, near * s * rng.f(0.02, 0.06))];
+      run.push(A(d2 + r * 0.55, near * s * 0.02));
+      run.push(A(d2 + r * 0.62, back * r * 0.55));
+      run.push(A(d2 + r * 0.2, back * r * rng.f(0.85, 1.05)));
+      if (rng.chance(0.5)) run.push(A(d2 - r * 0.15, back * r * rng.f(0.8, 1.0)));
+      inkPoly(c, rng, run, { w: w * rng.f(0.85, 1.05), dry: 0.35, doubled: rng.chance(0.2) });
+      if (rng.chance(0.45)) nostril(A(d2 + r * 0.3, back * r * 0.45), rng.f(0.013, 0.022));
+      bottom = d2 + r * 0.7;
       outer = run;
     } else if (style === "nostrils") {
-      // barely a nose: a hint of bridge and two marks
-      if (rng.chance(0.7)) {
-        inkPoly(c, rng, [A(drop * 0.3, 0), A(drop * 0.8, near * s * 0.02)], { w: w * 0.5, dry: 0.9 });
-      }
-      // never a matched pair: one is bigger, lower and further out
+      // barely a nose: a hint of bridge and two unmatched marks
+      if (rng.chance(0.7)) inkPoly(c, rng, [A(drop * 0.35, 0), A(drop * 0.9, near * s * 0.02)], { w: w * 0.5, dry: 0.9 });
       nostril(A(drop, near * s * rng.f(0.05, 0.1)), rng.f(0.022, 0.036));
       if (rng.chance(0.7)) nostril(A(drop - s * rng.f(0.02, 0.06), back * s * rng.f(0.02, 0.05)), rng.f(0.012, 0.022));
+      // always a mark under them: two dots alone read as a pair of holes
+      inkPoly(c, rng, [A(drop + s * 0.015, near * s * 0.04), A(drop + s * rng.f(0.0, 0.03), back * baseRun * rng.f(0.4, 0.7))], { w: w * 0.6, dry: 0.75 });
       outer = null;
+    } else if (style === "silhouette") {
+      // Too frontal for the contour to carry it, so he draws the knuckle
+      // head-on: a short bridge and a broad blunt base.
+      const d2 = drop * rng.f(0.62, 0.8);
+      const bend = rng.f(0.0, 0.04) * s * near;
+      const wideB = d2 * rng.f(0.45, 0.7);
+      const run = [A(0, bend * 0.3), A(d2 * 0.55, bend), A(d2, bend + near * s * rng.f(0.01, 0.04))];
+      run.push(A(d2 + s * rng.f(0.02, 0.055), bend + near * s * 0.01));
+      run.push(A(d2 + s * rng.f(0.01, 0.04), bend + back * wideB * 0.6));
+      run.push(A(d2 - s * rng.f(0.0, 0.05), bend + back * wideB * rng.f(0.9, 1.1)));
+      inkPoly(c, rng, run, { w, dry: 0.3, doubled: rng.chance(0.3) });
+      if (rng.chance(0.55)) nostril(A(d2 + s * 0.01, bend + back * wideB * 0.55), rng.f(0.016, 0.03));
+      bottom = d2 + s * 0.06;
+      outer = run;
     } else {
-      // the plain one: a long line down, a foot back into the face
-      const bend = rng.f(0.01, 0.06) * s * near;
+      // the plain one, and still one stroke: down, hard corner, back into the
+      // face, out. A bare vertical with a token foot is the thing that reads
+      // as a crack in the paper rather than a nose.
+      const bend = rng.f(0.01, 0.055) * s * near;
       const run = [];
-      const brk = rng.f(0.3, 0.5);
-      const kink = rng.f(0.3, 1.0) * s * 0.05 * back;
-      for (let i = 0; i <= 8; i++) {
-        const u = i / 8;
-        run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.85) + (u < brk ? (u / brk) * kink : kink * (1 - (u - brk) / (1 - brk)) * 0.2)));
+      for (let i = 0; i <= 7; i++) {
+        const u = i / 7;
+        run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.85)));
       }
-      inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
-      drawBase(bend, s * rng.f(0.1, 0.2));
+      for (const p of foot(bend, baseRun)) run.push(p);
+      inkPoly(c, rng, run, { w, dry: 0.28, doubled: rng.chance(0.22) });
+      if (rng.chance(0.45)) nostril(A(drop - s * 0.01, bend + back * baseRun * rng.f(0.55, 0.9)), rng.f(0.015, 0.028));
+      // the near wing: a short tick, never a mirror of the base
+      if (rng.chance(0.3)) {
+        inkPoly(c, rng, [A(drop - s * rng.f(0.04, 0.09), bend + near * s * rng.f(0.02, 0.05)), A(drop + s * 0.01, bend)], { w: w * 0.6, dry: 0.8 });
+      }
       outer = run;
     }
 
-    return { ax, ay, browP, base: drop + s * 0.04, outer };
+    return { ax, ay, browP, base: bottom + s * 0.05, outer };
   }
 
   function drawMouth(c, rng, skull, style, nose) {
@@ -3250,19 +3381,264 @@
     return px;
   }
 
-  const FIRST = [
-    "Lenny", "Gus", "Margo", "Pike", "Nell", "Horst", "Bea", "Cal", "Dino", "Edie",
-    "Finn", "Gert", "Hal", "Ike", "June", "Kip", "Lars", "Mo", "Ned", "Ora",
-    "Paz", "Quin", "Red", "Sol", "Tess", "Ulf", "Val", "Wes", "Yves", "Zed",
-    "Archie", "Bruno", "Clem", "Dutch", "Ellis", "Floyd", "Greta", "Hank", "Iris",
-    "Jules", "Klaus", "Lila", "Moss", "Nora", "Otto", "Pearl", "Ruth", "Stan",
-    "Thea", "Vera", "Walt", "Ada", "Bert", "Cora", "Del", "Ezra", "Faye",
+  // ---------- names ----------
+  // Names are assembled, not looked up. A wide curated pool of real given names
+  // is crossed with English surname morphology — toponymic (-ley -ford -worth),
+  // patronymic (-son -kins), Gaelic Mc/O' — so the surname supply is in the
+  // thousands rather than the dozens. Only glyphs the stroke font has are used
+  // (A-Z a-z space apostrophe hyphen) and every result is length-capped.
+
+  // Given names, used bare and as the left half of a full name. Ordinary,
+  // short, mostly pre-1960: the sort of person in the drawings.
+  const FIRST_PLAIN = [
+    // English, male
+    "Alf", "Arthur", "Basil", "Bert", "Bill", "Bram", "Brian", "Cecil", "Clem", "Cliff",
+    "Clive", "Colin", "Cyril", "Denis", "Derek", "Des", "Don", "Doug", "Duncan", "Eric",
+    "Ernest", "Ernie", "Frank", "Fred", "Geoff", "George", "Gordon", "Graham", "Guy", "Hal",
+    "Harold", "Henry", "Herb", "Horace", "Hugh", "Ian", "Ivor", "Jeff", "Jim", "Joe",
+    "Keith", "Ken", "Kev", "Len", "Leslie", "Lionel", "Malc", "Max", "Mervyn", "Mick",
+    "Miles", "Monty", "Morris", "Nat", "Ned", "Neil", "Nev", "Nigel", "Noel", "Norman",
+    "Ossie", "Perce", "Percy", "Peter", "Phil", "Piers", "Rafe", "Ralph", "Ray", "Reg",
+    "Rex", "Rob", "Rod", "Ron", "Roy", "Rufus", "Russ", "Sam", "Seth", "Sid",
+    "Stan", "Stuart", "Ted", "Terry", "Toby", "Tom", "Trevor", "Vaughn", "Vernon", "Vic",
+    "Vince", "Walt", "Wes", "Wilf", "Will",
+    // English, female
+    "Ada", "Agnes", "Alma", "Audrey", "Beryl", "Bess", "Brenda", "Bridget", "Cara", "Carol",
+    "Cissy", "Clara", "Cora", "Daphne", "Dinah", "Dora", "Doris", "Dot", "Edith", "Edna",
+    "Eileen", "Elsa", "Ena", "Enid", "Etta", "Ethel", "Eunice", "Faye", "Flora", "Freda",
+    "Gladys", "Glenda", "Grace", "Greta", "Hazel", "Hilda", "Ida", "Ina", "Irene", "Iris",
+    "Ivy", "Jean", "Jess", "Joan", "Joyce", "June", "Kath", "Lena", "Lilian", "Lois",
+    "Lorna", "Lynn", "Mabel", "Madge", "Marge", "Marion", "Marj", "Mary", "Maud", "Mavis",
+    "May", "Mona", "Muriel", "Myra", "Nancy", "Nell", "Nesta", "Nita", "Nora", "Norma",
+    "Olive", "Opal", "Pam", "Pat", "Pearl", "Peg", "Phyl", "Rae", "Rhona", "Rita",
+    "Rose", "Ruby", "Ruth", "Sadie", "Sheila", "Stella", "Sybil", "Sylvia", "Tess", "Thea",
+    "Thelma", "Vera", "Vi", "Vida", "Viola", "Vivien", "Wanda", "Yvonne",
+    // old compounds, vetted rather than generated
+    "Albert", "Aldred", "Aldric", "Aldwin", "Alfred", "Alric", "Alwyn", "Aylmer", "Aylward", "Baldric",
+    "Baldwin", "Barnard", "Bernard", "Bertram", "Cedric", "Cuthbert", "Delmer", "Delwyn", "Denzil", "Edgar",
+    "Edmund", "Edred", "Edsel", "Edward", "Edwin", "Egbert", "Elmer", "Everard", "Garwin", "Gerald",
+    "Gerard", "Gilbert", "Godard", "Godfrey", "Godric", "Godwin", "Herbert", "Hildred", "Howard", "Hubert",
+    "Humbert", "Jethro", "Kendrick", "Kenelm", "Lambert", "Leonard", "Mortimer", "Norbert", "Norvel", "Orson",
+    "Osbert", "Osgood", "Osmund", "Osric", "Oswald", "Oswin", "Quenton", "Randal", "Randolf", "Raymund",
+    "Reynard", "Rodric", "Rowland", "Rudolf", "Selwyn", "Sherwin", "Sigmund", "Theobald", "Thurston", "Ulric",
+    "Wendell", "Wilbert", "Wilfred", "Willard", "Wilmer", "Wilmot", "Winfred", "Winston", "Wulfric", "Wyndham",
+    // Irish
+    "Aidan", "Aine", "Aoife", "Brendan", "Bridie", "Cathal", "Ciara", "Colm", "Colum", "Conor",
+    "Cormac", "Dara", "Declan", "Deirdre", "Donal", "Eamon", "Enda", "Eoin", "Fergal", "Fergus",
+    "Finn", "Fiona", "Gerry", "Grainne", "Kieran", "Liam", "Maeve", "Mairead", "Malachy", "Neasa",
+    "Niall", "Niamh", "Nuala", "Oisin", "Orla", "Padraig", "Paidi", "Peig", "Riona", "Roisin",
+    "Ronan", "Rory", "Seamus", "Sean", "Shane", "Sinead", "Siobhan", "Sorcha", "Tadhg", "Una",
+    // Welsh
+    "Aled", "Alun", "Bryn", "Carys", "Ceri", "Dai", "Dilys", "Elin", "Emlyn", "Emrys",
+    "Enfys", "Ffion", "Geraint", "Glenys", "Gwen", "Gwilym", "Gwyn", "Huw", "Idris", "Ieuan",
+    "Ifor", "Iolo", "Llew", "Lowri", "Mair", "Megan", "Meirion", "Myfanwy", "Nerys", "Olwen",
+    "Owain", "Owen", "Rhian", "Rhodri", "Rhys", "Sian", "Tegwen", "Tudor", "Wyn",
+    // continental
+    "Anders", "Anka", "Bela", "Bodil", "Bruno", "Dino", "Elke", "Emil", "Franz", "Fritz",
+    "Gerd", "Gitta", "Gustav", "Hans", "Heike", "Hilde", "Horst", "Ilse", "Ingrid", "Ivan",
+    "Janos", "Jan", "Kata", "Karl", "Klaus", "Kurt", "Lars", "Lotte", "Magda", "Mila",
+    "Nadia", "Nils", "Olav", "Oskar", "Otto", "Petra", "Piet", "Radek", "Rudi", "Sigrid",
+    "Stig", "Sven", "Tibor", "Tomas", "Ulf", "Ulla", "Vilma", "Yves", "Zofia", "Zoltan",
+    // American, old
+    "Abe", "Bud", "Cal", "Chip", "Curt", "Del", "Dutch", "Earl", "Eli", "Elmo",
+    "Ezra", "Floyd", "Gene", "Gus", "Hank", "Hoyt", "Ike", "Jed", "Kip", "Lew",
+    "Lyle", "Marv", "Merle", "Milt", "Moss", "Otis", "Red", "Roscoe", "Sol", "Vern",
+    "Wade", "Wilbur", "Zane", "Zeb", "Zed", "Zeke",
   ];
 
-  const LAST = [
-    "Pike", "Voss", "Quinn", "Moss", "Hart", "Bell", "Crowe", "Nash", "Wade",
-    "Cole", "Frost", "Reed", "Lane", "Brooks", "Shaw", "Kane", "Drew", "Poe",
+  // Stems that take a diminutive tail. Doubled consonants are baked in, so the
+  // suffix just concatenates: Robb + ie, Robb + o, Tomm + y.
+  const DIM_STEM_M = [
+    "Bill", "Bobb", "Barn", "Cliff", "Coll", "Conn", "Crabb", "Dav", "Dodd", "Donn",
+    "Duff", "Dunn", "Edd", "Frank", "Gibb", "Gord", "Gunn", "Hall", "Harr", "Hobb",
+    "Hodd", "Hugg", "Jack", "Jagg", "Jeff", "Jimm", "Jock", "Kenn", "Kipp", "Lenn",
+    "Matt", "Mick", "Mogg", "Morr", "Mudd", "Nedd", "Norr", "Patt", "Perc", "Phill",
+    "Podd", "Quigg", "Ripp", "Robb", "Ronn", "Rudd", "Samm", "Sepp", "Skinn", "Snodd",
+    "Sonn", "Spragg", "Stagg", "Stubb", "Tapp", "Tedd", "Tibb", "Timm", "Todd", "Tomm",
+    "Trigg", "Tubb", "Sidd", "Vinn", "Wagg", "Walt", "Widd", "Wilf", "Wint", "Winn",
+    "Zebb", "Bunn", "Lugg", "Redd", "Gaff", "Marn", "Hopp", "Larr", "Sull", "Pratt",
   ];
+  const DIM_STEM_F = [
+    "Ann", "Bett", "Cass", "Dinn", "Doll", "Dott", "Edd", "Ell", "Ess", "Ett",
+    "Flor", "Gill", "Hett", "Jenn", "Jess", "Kath", "Kell", "Lett", "Libb", "Lott",
+    "Madd", "Magg", "Marg", "Maur", "Moll", "Nan", "Nell", "Nett", "Norr", "Patt",
+    "Pegg", "Poll", "Prud", "Sall", "Sherr", "Stell", "Sull", "Tess", "Till", "Trud",
+    "Wend", "Winn", "Bess", "Effi", "Hess", "Minn", "Ros", "Susi", "Vinn", "Rill",
+  ];
+  const DIM_SUF_M = ["ie", "y", "o"];   // -o is the rarest of the three
+  const DIM_SUF_F = ["ie", "y"];
+
+  // Plain surnames, used bare. Deliberately unshowy.
+  const SUR_PLAIN = [
+    "Voss", "Hart", "Bell", "Crowe", "Nash", "Wade", "Cole", "Frost", "Reed", "Lane",
+    "Shaw", "Kane", "Drew", "Poe", "Brand", "Cobb", "Dodd", "Doyle", "Dunn", "Flynn",
+    "Gale", "Gill", "Glass", "Grimes", "Grubb", "Hale", "Hobbs", "Hogg", "Holt", "Hook",
+    "Hoyle", "Judd", "Kemp", "Kerr", "Kidd", "Lamb", "Leach", "Lock", "Marsh", "Mead",
+    "Mold", "Mott", "Munn", "Nunn", "Oakes", "Pace", "Peck", "Pratt", "Quill", "Rand",
+    "Rowe", "Rudd", "Sands", "Sharp", "Slade", "Snell", "Speed", "Stagg", "Steed", "Stout",
+    "Swann", "Tapp", "Tate", "Thorn", "Todd", "Trask", "Trigg", "Vale", "Veale", "Vine",
+    "Ward", "Weir", "Welch", "West", "Wren", "Yates", "Young", "Bourne", "Brill", "Bunce",
+    "Burr", "Chubb", "Clout", "Craik", "Crisp", "Croom", "Dark", "Deane", "Dench", "Dent",
+    "Dray", "Eames", "Earp", "Elms", "Fane", "Fell", "Fenn", "Fisk", "Gann", "Garth",
+    "Gaunt", "Gedge", "Glew", "Gore", "Gough", "Grange", "Greer", "Gull", "Hague", "Ham",
+    "Haw", "Heald", "Heap", "Hearn", "Heath", "Hine", "Hoad", "Hone", "Horn", "Howe",
+    "Hulme", "Hurd", "Hyde", "Keen", "Kell", "Knapp", "Knight", "Lash", "Lees", "Lisle",
+    "Loach", "Lowe", "Mace", "Mann", "Mapp", "Mears", "Milne", "Moon", "Mudd", "Nye",
+    "Orme", "Paine", "Pask", "Pell", "Penn", "Plum", "Pring", "Prowse", "Raven", "Rew",
+    "Rigg", "Rook", "Roper", "Rush", "Sale", "Salt", "Seed", "Sell", "Sloan", "Smart",
+    "Snape", "Spry", "Stack", "Stark", "Steer", "Stone", "Storr", "Straw", "Swain", "Tarr",
+    "Teale", "Thew", "Toft", "Trout", "Tuck", "Twist", "Vann", "Vick", "Vye", "Wain",
+    "Wake", "Wall", "Warr", "Watt", "Webb", "Weld", "Wheat", "Whyte", "Wick", "Wild",
+    "Winn", "Wise", "Wolfe", "Wood", "Wyke", "Yeo", "Ault", "Blyth", "Boak", "Braid",
+    "Brisk", "Cade", "Chalk", "Clegg", "Coy", "Crake", "Creed", "Dace", "Doust", "Drage",
+    "Dyer", "Egg", "Fairs", "Flack", "Foulds", "Frame", "Frisby", "Gadd", "Gaze", "Gimson",
+    "Glaze", "Goss", "Gray", "Groat", "Hames", "Hance", "Hasker", "Heron", "Hitch", "Hoare",
+    "Ives", "Jay", "Keast", "Kite", "Lack", "Larch", "Loft", "Lunn", "Mabb", "Meek",
+    "Mist", "Nock", "Noon", "Nunns", "Oats", "Peat", "Pinch", "Plaice", "Quick", "Race",
+    "Rake", "Rime", "Roach", "Rope", "Sage", "Scales", "Shanks", "Sheer", "Shrimp", "Silk",
+    "Skeggs", "Sleep", "Smee", "Snook", "Spurr", "Stang", "Stew", "Stray", "Stubbs", "Swale",
+    "Tame", "Tench", "Thrupp", "Tozer", "Trill", "Trunk", "Vaisey", "Verne", "Vokes", "Wace",
+    "Wanless", "Whin", "Whisk", "Wort", "Yale", "Yorke", "Zeal", "Bloor", "Cusk", "Dowse",
+    "Ash", "Bray", "Bunt", "Chant", "Clough", "Corke", "Dagg", "Dunk", "Fudge", "Grist",
+    "Hail", "Hind", "Jeeves", "Kench", "Loveys", "Mew", "Nib", "Pank", "Quirk", "Rains",
+    "Sculp", "Skene", "Sprat", "Tapley", "Uren", "Verrall", "Wicks", "Yell", "Zouch", "Prince",
+  ];
+
+  // Patronymic stems: personal names that take -son, -kins and friends.
+  const PAT_STEM = [
+    "Hod", "Daw", "Jack", "Wilk", "Wat", "Wil", "Rob", "Tom", "Hark", "Pear",
+    "Ad", "At", "Ell", "Gib", "Har", "Hew", "Hig", "Hob", "Hodg", "Hop",
+    "Hut", "Jeff", "Job", "Lam", "Law", "Mad", "Mat", "Nick", "Pat", "Paul",
+    "Rich", "Sam", "Sand", "Sim", "Sut", "Ted", "Wad", "Ben", "Cul", "Dib",
+    "Dob", "Duck", "Emm", "Gil", "Hank", "Jenk", "Jud", "Kit", "Lark", "Lud",
+    "Marr", "Nap", "Nix", "Perr", "Rank", "Roll", "Sib", "Stub", "Tib", "Tup",
+    "Wick", "Wyn", "Bat", "Codd", "Dann", "Gam", "Hann", "Ib", "Nan", "Wolf",
+    "Fitch", "Gunn", "Hallam", "Jenn", "Kend", "Malc", "Nell", "Ott", "Pack", "Rand",
+    "Sear", "Tolm", "Vin", "Watt", "Wray", "Bark", "Cross", "Dear", "Grig", "Kemp",
+  ];
+  const PAT_SUF = ["son", "kins", "kin", "ett", "man"];
+
+  // Toponymic stems: the -ley/-ford/-worth machine, which is where most real
+  // English surnames actually come from.
+  const TOP_STEM = [
+    "Ash", "Bark", "Bick", "Black", "Bram", "Brad", "Brant", "Buck", "Cal", "Cam",
+    "Car", "Chad", "Chal", "Chip", "Clax", "Clay", "Cod", "Comp", "Cor", "Cott",
+    "Cran", "Crow", "Dan", "Dar", "Daw", "Den", "Dod", "Dor", "Duck", "Dun",
+    "Ead", "Elm", "Fair", "Far", "Fern", "Fos", "Gad", "Gar", "Glad", "Gos",
+    "Grim", "Had", "Hal", "Ham", "Har", "Hark", "Hath", "Haw", "Hay", "Hed",
+    "Hem", "Hen", "Hep", "Hig", "Hil", "Hind", "Hob", "Hock", "Hod", "Hol",
+    "Hop", "Hor", "Hunt", "Ken", "Kim", "Kirk", "Lam", "Lang", "Lark", "Lath",
+    "Led", "Lil", "Lind", "Ling", "Lock", "Long", "Lud", "Mal", "Man", "Mar",
+    "Mars", "Med", "Mel", "Mer", "Mid", "Mil", "Mor", "Mos", "Nan", "Nap",
+    "Neth", "Nor", "Oak", "Ock", "Ot", "Pack", "Pad", "Pan", "Par", "Pat",
+    "Peck", "Pel", "Pem", "Pen", "Pep", "Pick", "Pil", "Pit", "Pol", "Pot",
+    "Rad", "Rand", "Ratt", "Raw", "Red", "Rid", "Rig", "Ring", "Rip", "Rock",
+    "Rod", "Rom", "Ros", "Roth", "Row", "Rud", "Rush", "Rye", "Sal", "Sand",
+    "Sax", "Scar", "Sed", "Sel", "Ship", "Shir", "Shot", "Sil", "Skel", "Slack",
+    "Small", "Smed", "South", "Spal", "Spen", "Stan", "Stap", "Stock", "Stor", "Straw",
+    "Stud", "Sut", "Swan", "Tad", "Tal", "Tan", "Tarl", "Tat", "Thack", "Thir",
+    "Thorn", "Til", "Tod", "Tol", "Top", "Tor", "Trem", "Trot", "Tun", "Turn",
+    "Up", "Wad", "Wal", "War", "Wat", "Wed", "Wen", "West", "Whar", "Whit",
+    "Wid", "Wil", "Win", "Wis", "With", "Wol", "Wood", "Wool", "Wor", "Wyn",
+    "Yar", "Ab", "Bag", "Bal", "Bes", "Bod", "Bol", "Brig", "Bur", "Cad",
+    "Chat", "Cul", "Dam", "Dep", "Dray", "Eas", "Fal", "Fin", "Gaw", "Gid",
+    "Hain", "Hask", "Hox", "Ick", "Kel", "Lack", "Mad", "Nal", "Oke", "Pens",
+    "Quar", "Ram", "Sap", "Shel", "Sib", "Tap", "Ulve", "Vel", "Wark", "Yat",
+  ];
+  const TOP_SUF = [
+    "ley", "ton", "ford", "worth", "wick", "combe", "shaw", "field", "well", "brook",
+    "ridge", "by", "thorpe", "dale", "croft", "ham", "stead", "don", "den", "low",
+    "mere", "gate", "land", "bury", "wood", "beck", "cott", "hurst", "burn", "grave",
+    "wray", "stone", "marsh", "moor", "leigh", "bourne",
+  ];
+
+  // Gaelic prefixes, and the roots that carry them.
+  const MAC_ROOT = [
+    "Bride", "Cabe", "Grath", "Kenna", "Nulty", "Ardle", "Coy", "Neice", "Vay", "Loon",
+    "Kie", "Quaid", "Vey", "Ilroy", "Ateer", "Guire", "Hale", "Cann", "Bain", "Kew",
+    "Auley", "Bean", "Crea", "Dade", "Elroy", "Fall", "Gill", "Hugh", "Innes", "Kell",
+    "Laine", "Manus", "Neill", "Nab", "Phee", "Quarrie", "Rae", "Sorley", "Teer", "Ward",
+  ];
+  const O_ROOT = [
+    "Dea", "Hare", "Loan", "Keefe", "Shea", "Gara", "Hanlon", "Neill", "Rourke", "Meara",
+    "Toole", "Byrne", "Dowd", "Leary", "Hagan", "Grady", "Mahon", "Riada", "Hea", "Neil",
+    "Beirne", "Carroll", "Coyne", "Devlin", "Fee", "Flynn", "Gorman", "Halloran", "Kane", "Lehane",
+    "Malley", "Nolan", "Quinn", "Reilly", "Shaughn", "Sullivan", "Tierney", "Vaughan", "Hora", "Duffy",
+  ];
+
+  // Period abbreviations, the way a signwriter would shorten a first name.
+  const ABBREV = ["Wm", "Jas", "Thos", "Geo", "Chas", "Robt", "Edwd", "Alfd", "Danl", "Saml", "Jno", "Josh", "Benj", "Fredk", "Richd", "Matt", "Nathl", "Chris"];
+
+  const BAD = /cock|fuck|shit|cunt|wank|piss|turd|slut|twat|nigg|rape|penis|anus|arse|boob|poop|fart|spunk|whore|queer|retard|semen|jizz|hooker/i;
+
+  // Biased pick: index pulled toward the front of the array, so the plain
+  // suffixes (-ley, -ton, -son) turn up far more often than the odd ones. A real
+  // set of names is lopsided; a flat one reads as machine output.
+  function lean(rng, arr, bias) {
+    let i = Math.floor(Math.pow(rng.f(0, 1), bias) * arr.length);
+    if (i >= arr.length) i = arr.length - 1;
+    if (i < 0) i = 0;
+    return arr[i];
+  }
+
+  // Reject seams that no English name has: doubled letter across the join,
+  // vowel meeting vowel, sibilant meeting sibilant.
+  function joins(stem, suf) {
+    const a = stem[stem.length - 1].toLowerCase(), b = suf[0];
+    if (a === b) return false;
+    if ("aeiou".includes(a) && "aeiou".includes(b)) return false;
+    if ("sz".includes(a) && "sz".includes(b)) return false;
+    return true;
+  }
+
+  function stemSuf(rng, stems, sufs, sBias, fBias) {
+    for (let k = 0; k < 4; k++) {
+      const s = lean(rng, stems, sBias), f = lean(rng, sufs, fBias);
+      if (joins(s, f)) return s + f;
+    }
+    return null;
+  }
+
+  function givenName(rng) {
+    const r = rng.f(0, 1);
+    if (r < 0.62) return rng.pick(FIRST_PLAIN);
+    if (r < 0.84) return rng.pick(DIM_STEM_M) + lean(rng, DIM_SUF_M, 1.8);
+    return rng.pick(DIM_STEM_F) + rng.pick(DIM_SUF_F);
+  }
+
+  function surname(rng) {
+    const r = rng.f(0, 1);
+    let out = null;
+    if (r < 0.16) out = rng.pick(SUR_PLAIN);
+    else if (r < 0.62) out = stemSuf(rng, TOP_STEM, TOP_SUF, 1.1, 1.25);
+    else if (r < 0.80) out = stemSuf(rng, PAT_STEM, PAT_SUF, 1.1, 1.45);
+    else if (r < 0.86) out = "Mc" + rng.pick(MAC_ROOT);
+    else if (r < 0.92) out = "O'" + rng.pick(O_ROOT);
+    else if (r < 0.95) {
+      // double-barrelled, two short bare surnames only
+      const a = rng.pick(SUR_PLAIN), b = rng.pick(SUR_PLAIN);
+      if (a !== b && a.length + b.length <= 9) out = a + "-" + b;
+    } else out = stemSuf(rng, TOP_STEM, TOP_SUF, 1.1, 1.25);
+    return out || rng.pick(SUR_PLAIN);
+  }
+
+  function makeName(rng) {
+    const form = rng.f(0, 1);            // decided once, so a long re-roll
+    for (let attempt = 0; attempt < 8; attempt++) {   // cannot turn a full name
+      let out;                                        // into a bare one
+      if (form < 0.15) out = givenName(rng);                          // bare first name
+      else if (form < 0.19) out = rng.pick(ABBREV) + " " + surname(rng);   // Wm Hodkins
+      else if (form < 0.22) out = givenName(rng)[0] + " " + surname(rng);  // H Blakeley
+      else out = givenName(rng) + " " + surname(rng);
+      const p = out.split(" ");
+      if (p.length === 2 && p[0] === p[1]) continue;
+      if (out.length > 15 || BAD.test(out)) continue;
+      // most names want to sit under twelve characters for the lettering
+      if (out.length > 12 && attempt < 5 && rng.chance(0.55)) continue;
+      return out;
+    }
+    return rng.pick(FIRST_PLAIN) + " " + rng.pick(SUR_PLAIN);
+  }
 
   // ---------- compose ----------
   // Silhouette is the only thing readable at grid scale, so skulls come in
@@ -3536,7 +3912,7 @@
 
     return applyHouseStyle(applyQuirk({
       person: P,
-      name: rng.chance(0.55) ? rng.pick(FIRST) : `${rng.pick(FIRST)} ${rng.pick(LAST)}`,
+      name: makeName(rng),
       yaw: rng.f(-0.75, 0.75),
       pitch,
       roll,
