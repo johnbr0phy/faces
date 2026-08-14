@@ -2491,7 +2491,22 @@
     const w = s * 0.026 * Math.min(1.2, heavy ?? 1);
     const fy = skull.faceY || 0;
 
-    const browRef = skull.project({ x: 0, y: -0.22 + fy, z: 0.72 });
+    // Where a nose starts is not a fact about the skull, it is a fact about
+    // this face: it has to begin between the eyes that were actually drawn.
+    // Anchored to its own point on the skull — y -0.22, half a brow above the
+    // eye line at y -0.12, and a good deal deeper at z 0.72 — it began above
+    // the eyes as often as below them, and it swung by a different amount to
+    // them on a turned head because it was pinned further back. On a face
+    // under a low brim that put the top of the bridge in the hat, with the one
+    // visible eye stranded out to the side of it.
+    //
+    // So it is pinned to the eye landmarks themselves, at the same depth they
+    // are, computed the same way they are and without touching the random
+    // stream — the same dude comes out, with his nose on his face.
+    const egap = skull.eyeGap ?? 0.36;
+    const eL = landmark(skull, { x: -egap, y: -0.12 + fy, z: 0.88 });
+    const eR = landmark(skull, { x: egap, y: -0.12 + fy, z: 0.88 });
+    const browRef = { x: (eL.x + eR.x) * 0.5, y: (eL.y + eR.y) * 0.5 };
     const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
     let ax = chinP.x - browRef.x;
     let ay = chinP.y - browRef.y;
