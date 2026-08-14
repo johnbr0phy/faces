@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Render a sheet of heads for side-by-side judging against refs/mannay-sheet-*.jpg
+# Render a sheet of heads for side-by-side judging against the reference plates
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/progress/shots"

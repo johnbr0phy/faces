@@ -645,7 +645,7 @@
     c.putImageData(img, 0, 0);
   }
 
-  // ---------- 3d skull (Mannay: pin features to a rough 3D head) ----------
+  // ---------- 3d skull: features are pinned to a rough 3D head ----------
   // Unit sphere → rotate yaw/pitch/roll → project → scale by ellipsoid radii.
   // Outline is the convex hull of the projected skull, so it stays an oval
   // when the head turns instead of collapsing into a sausage.
@@ -1807,9 +1807,9 @@
   }
 
   // ---------- the nose ----------
-  // One heavy gesture from the brow to the tip. In Mannay's plates this is
-  // the mark that owns the face: longer, blacker and more committed than
-  // anything else on it. Everything else is a bystander.
+  // One heavy gesture from the brow to the tip. This is the mark that owns
+  // the face: longer, blacker and more committed than anything else on it.
+  // Everything else is a bystander.
   function drawNose(c, rng, skull, style, heavy) {
     const s = skull.s;
     const w = s * 0.038 * (heavy ?? 1);
