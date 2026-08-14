@@ -1680,6 +1680,7 @@
   // flushed once the face is done.
   function drawHair(c, rng, skull, hull, style, color, defer) {
     const front = defer || [];
+    let lastMass = null;
     const s = skull.s;
     const shape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
     const mk = (opt) => {
@@ -1688,6 +1689,7 @@
         h._cx = skull.cx;
         h._cy = skull.cy;
         h._s = skull.s;
+        lastMass = h.mass;
       }
       return h;
     };
@@ -1698,14 +1700,14 @@
         const b = pin(skull, { x: 0.24, y: -0.88, z: 0.28 });
         inkLine(c, rng, a.x, a.y, b.x, b.y, s * 0.011);
       }
-      return;
+      return lastMass;
     }
 
     if (style === "recede") {
       // hair only survives at the temples and around the back
       const h = mk({ lineY: -0.56, recede: -0.3, bangs: -0.28, puff: 0.055, wob: 0.03 });
       if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.5) ? 6 : 0, edge: 2.3 });
-      return;
+      return lastMass;
     }
 
     if (style === "buzz") {
@@ -1718,13 +1720,13 @@
         inkPoly(c, rng, h.top, { w: s * 0.014, dry: 1.4 });
       }
       shortTicks(c, rng, skull, -0.5, 44, 0.09);
-      return;
+      return lastMass;
     }
 
     if (style === "messy") {
       const h = mk({ lineY: -0.5, bangs: 0.06, puff: 0.15, wob: 0.07 });
       if (h) inkMass(c, rng, h, color, { strays: 14, strayLen: 1.5, rag: 3.2 });
-      return;
+      return lastMass;
     }
 
     if (style === "bowl") {
@@ -1738,7 +1740,7 @@
           inkLine(c, rng, p.x, p.y, p.x + rng.f(-2, 2), p.y + rng.f(s * 0.04, s * 0.1), s * 0.013);
         }
       }
-      return;
+      return lastMass;
     }
 
     if (style === "spiky") {
@@ -1754,7 +1756,7 @@
           inkLine(c, rng, q.x, q.y, q.x + (ox / len) * g + rng.f(-6, 6), q.y + (oy / len) * g, s * rng.f(0.016, 0.026), 2);
         }
       }
-      return;
+      return lastMass;
     }
 
     if (style === "curly") {
@@ -1784,27 +1786,27 @@
           inkCirc(c, rng, q.x, q.y, rng.f(s * 0.05, s * 0.1), s * 0.015, rng.chance(0.35));
         }
       }
-      return;
+      return lastMass;
     }
 
     if (style === "thatch") {
       // no black at all: hair as laid strokes over an open crown
       const h = mk({ lineY: -0.46, recede: rng.f(-0.04, 0.14), sideBias: rng.f(-0.2, 0.2), puff: 0.05, wob: 0.05 });
       if (h) combMass(c, rng, h, { lines: rng.i(30, 54), bow: rng.f(0.06, 0.3), wipe: true });
-      return;
+      return lastMass;
     }
 
     if (style === "comb") {
       const h = mk({ lineY: -0.5, recede: 0.13, sideBias: rng.sign() * 0.14, puff: 0.065, wob: 0.04 });
       if (h) combMass(c, rng, h, { lines: rng.i(30, 48), bow: rng.f(0.1, 0.34), wipe: true });
-      return;
+      return lastMass;
     }
 
     if (style === "side") {
       const dir = rng.sign();
       const h = mk({ lineY: -0.5, recede: 0.11, bangs: 0.04, sideBias: dir * 0.26, puff: 0.1, wob: 0.05 });
       if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.55) ? 8 : 0, strayLen: 1.2 });
-      return;
+      return lastMass;
     }
 
     if (style === "beanie") {
@@ -1826,7 +1828,7 @@
           if (mid) inkCirc(c, rng, mid.x, mid.y - s * 0.06, s * 0.09, s * 0.016, true);
         }
       }
-      return;
+      return lastMass;
     }
 
     if (style === "flat") {
@@ -1841,7 +1843,7 @@
           });
         }
       }
-      return;
+      return lastMass;
     }
 
     if (style === "baseball") {
@@ -1870,7 +1872,7 @@
           });
         }
       }
-      return;
+      return lastMass;
     }
 
     if (style === "band") {
@@ -1886,11 +1888,12 @@
         inkPoly(c, rng, band.hi, { w: s * 0.02, dry: 0.5 });
         inkPoly(c, rng, band.lo, { w: s * 0.024, dry: 0.4 });
       }
-      return;
+      return lastMass;
     }
 
     const h = mk({ lineY: -0.5, puff: 0.095, wob: 0.05 });
     if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.5) ? 6 : 0 });
+    return lastMass;
   }
 
   // ---------- features ----------
@@ -2916,6 +2919,10 @@
     Z: ["M .16 .14 L .84 .14 L .16 .9 L .86 .9"],
     " ": [],
     "-": ["M .18 .55 L .82 .55"],
+    "0": ["M .5 .12 C .16 .14 .16 .9 .5 .92 C .84 .9 .84 .14 .5 .12"],
+    "@": [
+      "M .66 .74 C .4 .86 .2 .7 .26 .5 C .32 .3 .62 .28 .64 .5 C .64 .68 .5 .72 .46 .6 C .44 .48 .6 .44 .66 .56 L .68 .72 C .72 .82 .88 .74 .86 .52 C .84 .2 .44 .06 .24 .28 C .04 .5 .16 .92 .5 .96",
+    ],
     "'": ["M .5 .12 L .42 .3"],
   };
 
@@ -3051,7 +3058,7 @@
       px += adv + size * rng.f(0.03, 0.11) + tuck;
       prev = ch;
     }
-    if ((opt.rule ? true : rng.chance(0.66)) && px > size * 0.8) {
+    if ((opt.rule === false ? false : opt.rule ? true : rng.chance(0.66)) && px > size * 0.8) {
       const y0 = size * rng.f(1.06, 1.24) + drift * 0.6;
       const cuts = rng.i(1, 3);
       let x0 = size * rng.f(-0.02, 0.08);
@@ -3245,7 +3252,7 @@
     }
 
     // colour is a decision too, and rarely: his sheet is one face in five
-    if (rng.chance(0.2)) d.colour = rng.pick(["head", "head", "behind"]);
+    if (rng.chance(0.46)) d.colour = rng.pick(["head", "head", "head", "hat", "behind"]);
 
     // --- clamp the ensemble. Per-face ink variance is the generator look:
     // his sd is about 5, ours ran 8-9 by letting scale be a personality trait.
@@ -3457,7 +3464,7 @@
     const body = drawBody(c, R.body, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
     const hull = drawHead(c, rng, skull, dude.skin);
     const inFront = [];
-    drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront);
+    const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront);
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
     const nose = drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
@@ -3469,6 +3476,7 @@
     if (dude.colour && dude.colour !== "behind") {
       const targets = [];
       if (dude.colour === "head") targets.push({ pts: hull });
+      if (dude.colour === "hat" && hairMassPts) targets.push({ pts: hairMassPts });
       if (dude.colour === "body" && body.core) targets.push({ pts: body.core });
       if (!targets.length) targets.push({ pts: hull });
       colourPass(c, R.colour, s, targets);
@@ -3515,15 +3523,20 @@
   // with olive and a cold blue-grey behind, saturation 0.2 and value 0.6-0.8.
   // It goes down as a flat patch that does NOT line up with the ink — the
   // off-register is the whole character of it, like a second pass on a press.
+  // Measured off images/IMG_5229: 19 of 48 faces carry colour, the median
+  // patch is 22% of its cell, and the palette is warmer and PALER than the
+  // one taken off the other sheet — hue 15-45, saturation 0.12-0.25, value
+  // 0.75-0.88. Everything I had was a stop or two too dark.
   const WASHES = [
-    "#ccb7a3", "#ccb7a3", "#ccb7a3", "#c4a88f", "#d8c4ae",
-    "#99897a", "#a8a882", "#cccca3", "#97a6b5", "#b59a86", "#c9a68f",
+    "#dfd1c3", "#dfc3a7", "#dfc3a7", "#dfcac3", "#dfb5a7",
+    "#bfb3a7", "#dfd8c3", "#dfd1a7", "#bfa78f", "#c8b49c",
+    "#b9c0c9", "#c2c4a8",
   ];
 
   function offRegister(pts, rng, k) {
     const dx = rng.f(-1, 1) * k;
     const dy = rng.f(-1, 1) * k;
-    const g = rng.f(0.74, 1.02); // his patches often fall short of the shape
+    const g = rng.f(0.78, 1.04);
     let cx = 0;
     let cy = 0;
     for (const p of pts) {
@@ -3535,23 +3548,105 @@
     return pts.map((p) => ({ x: cx + (p.x - cx) * g + dx, y: cy + (p.y - cy) * g + dy }));
   }
 
+  // How it goes down matters more than which colour it is. Zoomed in, his
+  // fills are not flat and they are not neat hatching: they are short strokes
+  // of VARYING length, laid at a slant, overlapping unevenly, with the colour
+  // building where they cross and paper showing between them. The pencil
+  // starts and stops inside the shape and runs past its edge in places.
   function colourPass(c, rng, s, targets) {
     if (!targets.length) return;
-    const n = rng.chance(0.26) ? 2 : 1;
+    const n = rng.chance(0.22) ? 2 : 1;
     const used = [];
     for (let i = 0; i < n; i++) {
       const t = rng.pick(targets);
-      if (!t || !t.pts || t.pts.length < 3 || used.includes(t)) continue;
+      if (!t || !t.pts || t.pts.length < 3 || used.indexOf(t) >= 0) continue;
       used.push(t);
+      const pts = offRegister(t.pts, rng, s * rng.f(0.05, 0.16));
+      const col = t.color || rng.pick(WASHES);
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of pts) {
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const span = Math.hypot(x1 - x0, y1 - y0);
+      const mode = rng.pick(["scribble", "scribble", "scribble", "zigzag", "flat", "flat"]);
+
       c.save();
       c.globalCompositeOperation = "multiply";
-      c.globalAlpha = rng.f(0.55, 0.92);
-      const pts = offRegister(t.pts, rng, s * rng.f(0.04, 0.13));
+      // clip to a slightly enlarged shape, so the pencil can run past the ink
       c.beginPath();
-      pts.forEach((p, j) => (j ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+      pts.forEach((p, j) => {
+        const q = { x: cx + (p.x - cx) * 1.12, y: cy + (p.y - cy) * 1.12 };
+        return j ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y);
+      });
       c.closePath();
-      c.fillStyle = t.color || rng.pick(WASHES);
-      c.fill();
+      c.clip();
+
+      if (mode === "flat") {
+        c.globalAlpha = rng.f(0.55, 0.9);
+        c.fillStyle = col;
+        c.beginPath();
+        pts.forEach((p, j) => (j ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+        c.closePath();
+        c.fill();
+      } else {
+        const ang = rng.f(-1.2, -0.4);
+        const dx = Math.cos(ang);
+        const dy = Math.sin(ang);
+        const pitch = s * rng.f(0.05, 0.11);
+        c.strokeStyle = col;
+        c.lineCap = "round";
+        if (mode === "zigzag") {
+          // one continuous back-and-forth, the turns left visible
+          c.globalAlpha = rng.f(0.4, 0.7);
+          c.lineWidth = pitch * rng.f(0.6, 1.0);
+          c.beginPath();
+          let k = -span * 0.55;
+          let side = 1;
+          let first = true;
+          while (k < span * 0.55) {
+            const reach = span * rng.f(0.28, 0.5);
+            const mx = cx - dy * k;
+            const my = cy + dx * k;
+            const px = mx + dx * reach * side;
+            const py = my + dy * reach * side;
+            if (first) {
+              c.moveTo(mx - dx * reach * side, my - dy * reach * side);
+              first = false;
+            }
+            c.lineTo(px, py);
+            k += pitch * rng.f(0.7, 1.3);
+            side *= -1;
+          }
+          c.stroke();
+        } else {
+          // short strokes, uneven, overlapping — the colour builds where they cross
+          const count = Math.round((span * 2.2) / pitch);
+          for (let j = 0; j < count; j++) {
+            c.globalAlpha = rng.f(0.3, 0.62);
+            c.lineWidth = pitch * rng.f(0.42, 0.95);
+            const k = rng.f(-span * 0.6, span * 0.6);
+            const along = rng.f(-span * 0.45, span * 0.45);
+            const len = span * rng.f(0.16, 0.55);
+            const wob = rng.f(-0.14, 0.14);
+            const ex = Math.cos(ang + wob);
+            const ey = Math.sin(ang + wob);
+            const mx = cx - dy * k + dx * along;
+            const my = cy + dx * k + dy * along;
+            c.beginPath();
+            c.moveTo(mx - ex * len * 0.5, my - ey * len * 0.5);
+            c.lineTo(mx + ex * len * 0.5, my + ey * len * 0.5);
+            c.stroke();
+          }
+        }
+      }
       c.restore();
     }
   }
@@ -3590,7 +3685,7 @@
         skull.eyeGap = d.eyeGap;
         const hull = drawHead(c, rng, skull, d.skin);
         const inFront = [];
-        drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront);
+        const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront);
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
         const nose = drawNose(c, rng, skull, d.nose, d.noseHeavy);
@@ -3599,7 +3694,9 @@
         inFront.forEach((f) => f());
         if (rng.chance(0.3)) drawNeck(c, rng, skull);
         if (d.colour) {
-          if (d.colour === "behind") {
+          if (d.colour === "hat" && hairMassPts) {
+            colourPass(c, rngFor(seed0, "colour", idx), s, [{ pts: hairMassPts }]);
+          } else if (d.colour === "behind") {
             const blob = [];
             const rr = s * rng.f(0.92, 1.2);
             for (let i = 0; i < 14; i++) {
@@ -3638,6 +3735,31 @@
 
   const PLATE = !!new URLSearchParams(location.search).get("plate");
   if (PLATE) document.body.classList.add("plate");
+  // The credit is written with the same nib as the drawing. Georgia in the
+  // corner of a pen-and-ink page is the same tell the button used to be.
+  function drawCredit(seed) {
+    [
+      ["credit-a", "inspired by mannay"],
+      ["credit-b", "ruined by @johnbr0"],
+    ].forEach(([id, text], i) => {
+      const cv = document.getElementById(id);
+      if (!cv) return;
+      const bc = cv.getContext("2d");
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = 300;
+      const h = 30;
+      cv.width = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
+      bc.setTransform(dpr, 0, 0, dpr, 0, 0);
+      bc.clearRect(0, 0, w, h);
+      drawCreditLine(bc, rngFor(seed, "credit", i), text);
+    });
+  }
+
+  function drawCreditLine(bc, rng, text) {
+    drawName(bc, rng, text, 4, 5, 15, { caps: false, rule: false, w: 0.075 });
+  }
+
   let count = 0;
   let seed = parseSeed();
 
@@ -3663,6 +3785,7 @@
     else drawDude(ctx, R, dude, cssW, cssH);
     count += 1;
     drawButton(seed ^ 0x9e3779b9);
+    drawCredit(seed);
     tallyEl.textContent = `dude nº ${count}`;
     const url = new URL(location.href);
     url.searchParams.set("s", String(seed));

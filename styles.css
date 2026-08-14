@@ -82,16 +82,21 @@ body.plate #page { height: 100dvh; max-height: none; }
   bottom: 12px;
   margin: 0;
   text-align: right;
-  font: italic 12px/1.5 Georgia, "Times New Roman", serif;
-  color: var(--ink);
-  opacity: 0.42;
+  opacity: 0.78;
   pointer-events: auto;
 }
 
 .credit a {
-  color: inherit;
+  display: block;
+  line-height: 0;
   text-decoration: none;
-  border-bottom: 1px solid currentColor;
+}
+
+.credit canvas {
+  display: block;
+  width: 160px;
+  height: 16px;
+  margin-left: auto;
 }
 
 .credit a:hover { opacity: 1; }
