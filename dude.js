@@ -1214,8 +1214,8 @@
       const fi = rng.i(1, front.length - 2);
       const p = front[fi];
       if (p.z !== undefined && p.z < 0.05) continue;
-      const drop = h._s * rng.f(0.1, 0.3);
-      const wdt = h._s * rng.f(0.035, 0.085);
+      const drop = h._s * rng.f(0.08, 0.24);
+      const wdt = h._s * rng.f(0.022, 0.05);
       const lean = rng.f(-0.5, 0.5);
       const tip = { x: p.x + drop * lean, y: p.y + drop };
       inkFill(c, rng, [
@@ -2023,10 +2023,10 @@
     dy /= d;
     const nx = -dy;
     const ny = dx;
-    const pr = r * rng.f(1.45, 2.0);
+    const pr = r * rng.f(1.7, 2.4);
     const c0 = { x: tip.x + dx * pr * 0.5, y: tip.y + dy * pr * 0.5 };
     const pts = [];
-    const nF = rng.i(3, 4);
+    const nF = rng.i(2, 3);
     for (let i = 0; i <= nF; i++) {
       const t = i / nF;
       const a = -Math.PI * 0.52 + t * Math.PI * 1.04;
@@ -2039,11 +2039,11 @@
     inkPoly(c, rng, [{ x: tip.x - nx * r * side, y: tip.y - ny * r }].concat(pts).concat([
       { x: tip.x + nx * r * side, y: tip.y + ny * r },
     ]), { w: s * 0.026, dry: 0.9, wobble: s * 0.025 });
-    // knuckle ticks instead of drawn fingers
-    for (let i = 1; i < nF; i++) {
-      if (rng.chance(0.4)) continue;
-      const q = pts[i];
-      inkLine(c, rng, q.x, q.y, c0.x + (q.x - c0.x) * 0.45, c0.y + (q.y - c0.y) * 0.45, s * 0.018);
+    // At most one knuckle tick. Several of them, on a hand this size, bunch
+    // into a solid knot that reads as a ball joint rather than a hand.
+    if (rng.chance(0.55)) {
+      const q = pts[rng.i(1, Math.max(1, nF - 1))];
+      inkLine(c, rng, q.x, q.y, c0.x + (q.x - c0.x) * 0.3, c0.y + (q.y - c0.y) * 0.3, s * 0.016);
     }
   }
 
@@ -2056,22 +2056,22 @@
     const kinds = [
       // stocky: wide, short, thick through the middle
       () => ({ shW: rng.f(1.14, 1.42), hipW: rng.f(0.92, 1.18), torso: rng.f(1.6, 1.9),
-               legs: rng.f(1.3, 1.62), waist: rng.f(1.02, 1.16), armW: rng.f(0.2, 0.25) }),
+               legs: rng.f(1.3, 1.62), waist: rng.f(1.06, 1.26), armW: rng.f(0.2, 0.25) }),
       // lanky: narrow, long, straight
       () => ({ shW: rng.f(0.7, 0.9), hipW: rng.f(0.48, 0.66), torso: rng.f(2.2, 2.6),
-               legs: rng.f(2.1, 2.55), waist: rng.f(0.86, 0.98), armW: rng.f(0.13, 0.17) }),
+               legs: rng.f(2.1, 2.55), waist: rng.f(0.74, 0.92), armW: rng.f(0.13, 0.17) }),
       // pot: narrow up top, heavy low down
       () => ({ shW: rng.f(0.8, 1.0), hipW: rng.f(1.0, 1.3), torso: rng.f(1.85, 2.15),
-               legs: rng.f(1.5, 1.85), waist: rng.f(1.12, 1.34), armW: rng.f(0.17, 0.22) }),
+               legs: rng.f(1.5, 1.85), waist: rng.f(1.2, 1.5), armW: rng.f(0.17, 0.22) }),
       // taper: broad shoulders down to nothing
       () => ({ shW: rng.f(1.2, 1.5), hipW: rng.f(0.52, 0.72), torso: rng.f(1.95, 2.3),
-               legs: rng.f(1.85, 2.2), waist: rng.f(0.8, 0.94), armW: rng.f(0.18, 0.23) }),
+               legs: rng.f(1.85, 2.2), waist: rng.f(0.66, 0.86), armW: rng.f(0.18, 0.23) }),
       // slight: small all over, short limbs
       () => ({ shW: rng.f(0.72, 0.92), hipW: rng.f(0.56, 0.76), torso: rng.f(1.55, 1.85),
-               legs: rng.f(1.35, 1.7), waist: rng.f(0.92, 1.06), armW: rng.f(0.13, 0.18) }),
+               legs: rng.f(1.35, 1.7), waist: rng.f(0.86, 1.1), armW: rng.f(0.13, 0.18) }),
       // ordinary, so the sheet has a baseline
       () => ({ shW: rng.f(0.92, 1.14), hipW: rng.f(0.66, 0.88), torso: rng.f(1.9, 2.25),
-               legs: rng.f(1.7, 2.05), waist: rng.f(0.94, 1.08), armW: rng.f(0.16, 0.21) }),
+               legs: rng.f(1.7, 2.05), waist: rng.f(0.84, 1.16), armW: rng.f(0.16, 0.21) }),
     ];
     return rng.pick(kinds)();
   }
@@ -2318,8 +2318,11 @@
     const outline = core;
 
     // ---- clothes cut into the figure ----
-    const hemY = shY + s * rng.f(1.25, 1.55);
-    const sleeveT = rng.f(0.42, 0.72);
+    // Pinned to the shoulders, the hem landed at the same height whatever the
+    // build — measured across seven figures it moved 1.25x while the torso
+    // moved 1.56x and the legs 1.85x. A garment belongs to its torso.
+    const hemY = shY + (hipY - shY) * rng.f(0.82, 1.34);
+    const sleeveT = rng.f(0.36, 0.66);
     const cuff = (S, side) => {
       const i = Math.round(sleeveT * (S.length - 1));
       const a = edgeOf(S, armR, -1, side < 0 ? 11 : 83)[i];
@@ -2422,12 +2425,15 @@
       const pitch = s * rng.f(0.11, 0.3);
       const heavy = s * rng.f(0.022, 0.07);
       if (clothes.pattern === "stripe") {
-        for (let y = shY + s * rng.f(0.04, 0.2); y < hemY; y += pitch) {
+        // skewed independently, gaps varying, a third running past the edge
+        for (let y = shY + s * rng.f(0.04, 0.2); y < hemY; y += pitch * rng.f(0.6, 1.4)) {
+          const skew = rng.f(-0.14, 0.14) * shW;
+          const over = rng.chance(0.34) ? rng.f(0.1, 0.45) : 0;
           inkPoly(c, rng, [
-            { x: cx - shW * 1.8, y },
-            { x: cx, y: y + rng.f(-3, 4) },
-            { x: cx + shW * 1.8, y: y + rng.f(-4, 4) },
-          ], { w: heavy, dry: 0.5, wobble: s * 0.03 });
+            { x: cx - shW * (1.2 + over), y: y - skew },
+            { x: cx + rng.f(-6, 6), y: y + rng.f(-3, 4) },
+            { x: cx + shW * (1.2 + over), y: y + skew + rng.f(-4, 4) },
+          ], { w: heavy * rng.f(0.7, 1.3), dry: 0.5, wobble: s * 0.035 });
         }
       } else if (clothes.pattern === "vstripe") {
         for (let x = cx - shW * 1.3; x < cx + shW * 1.3; x += pitch * rng.f(0.75, 1.3)) {
@@ -2832,6 +2838,11 @@
       nameX = Math.max(body.maxX + s * rng.f(0.1, 0.32), cx + s * 1.15);
       nameY = cy + s * rng.f(0.0, 0.55);
     }
+    // clear the whole drawing. Measuring against the body alone let the name
+    // start inside an ear on a wide head.
+    let inkRight = body.maxX;
+    for (const q of hull) if (q.x > inkRight) inkRight = q.x;
+    if (spot !== "feet") nameX = Math.max(nameX, inkRight + s * rng.f(0.12, 0.34));
     const nameW = size * (String(dude.name).length * 0.92 + 0.6);
     if (spot !== "feet" && nameX + nameW > w - 12) {
       // no room in the margin, so it goes under the feet
