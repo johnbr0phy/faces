@@ -7,29 +7,32 @@
 <style>
   :root { --paper:#dfdacf; --ink:#232019; }
   body { margin:0; background:var(--paper); color:var(--ink);
-         font:15px/1.55 ui-serif, Georgia, serif; }
-  main { max-width: 1080px; margin: 0 auto; padding: 40px 22px 90px; }
-  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  h2 { font-size: 20px; margin: 44px 0 10px; }
-  p.lede { margin: 0 0 30px; opacity: .75; }
-  .grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fill, minmax(210px,1fr)); }
-  .grid img { width:100%; display:block; border:1px solid rgba(35,32,25,.18); }
+         font:15.5px/1.6 ui-serif, Georgia, serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 44px 22px 100px; }
+  h1 { font-size: 31px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 21px; margin: 50px 0 12px; }
+  h3 { font-size: 16px; margin: 26px 0 6px; }
+  p.lede { margin: 0 0 32px; opacity: .75; }
+  .grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fill, minmax(205px,1fr)); }
+  .grid img { width:100%; display:block; border:1px solid rgba(35,32,25,.16); }
   .pair { display:grid; gap:16px; grid-template-columns: 1fr 1fr; align-items:start; }
-  .pair img { width:100%; display:block; border:1px solid rgba(35,32,25,.18); }
-  figcaption { font-size:12.5px; opacity:.65; padding-top:5px; }
-  ol { padding-left: 20px; }
-  li { margin-bottom: 9px; }
+  .pair img { width:100%; display:block; border:1px solid rgba(35,32,25,.16); }
+  figcaption { font-size:12.5px; opacity:.62; padding-top:5px; }
+  ol, ul { padding-left: 20px; }
+  li { margin-bottom: 10px; }
   code { background: rgba(35,32,25,.07); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
-  .note { border-left: 2px solid rgba(35,32,25,.3); padding-left: 14px; opacity:.8; }
+  blockquote { margin: 10px 0 16px; border-left: 2px solid rgba(35,32,25,.3);
+               padding-left: 15px; opacity:.82; font-style: italic; }
+  .note { border-left: 2px solid rgba(35,32,25,.28); padding-left: 15px; opacity:.82; }
 </style>
 </head>
 <body>
 <main>
   <h1>a dude — progress</h1>
-  <p class="lede">Canvas 2D. One dude per click, drawn on a hidden 3D skull. The bar is Mannay's plates in <code>refs/</code>.</p>
+  <p class="lede">Canvas 2D. One dude per click, drawn on a hidden 3D skull. The bar is Mannay's plates in <code>refs/</code>. Nobody grades their own work here: every round is judged by critics with fresh context who are shown the sheets unlabelled and asked which they'd rather look at.</p>
 
   <h2>Plate mode — like for like</h2>
-  <p class="note">The fairest test is a sheet against a sheet. <code>index.html?plate=1</code> renders 48 heads on one page, the same format as the reference plates. Ours on the left, Mannay on the right.</p>
+  <p class="note">A sheet is only fairly judged against a sheet. <code>index.html?plate=1</code> renders 48 heads on one page in the same format as the reference plates, so the blind A/B is honest. Ours left, Mannay right.</p>
   <div class="pair">
     <figure style="margin:0"><img src="progress/shots/plate-2026.png" alt="our plate" /><figcaption>ours — <code>?plate=1&amp;s=2026</code></figcaption></figure>
     <figure style="margin:0"><img src="refs/mannay-sheet-1.jpg" alt="reference plate" /><figcaption>Mannay, sheet 1</figcaption></figure>
@@ -38,33 +41,50 @@
   <h2>Full dudes</h2>
   <div class="grid">
     <figure style="margin:0"><img src="progress/shots/s42.png" alt="seed 42" /><figcaption>s=42</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s88.png" alt="seed 88" /><figcaption>s=88</figcaption></figure>
     <figure style="margin:0"><img src="progress/shots/s777.png" alt="seed 777" /><figcaption>s=777</figcaption></figure>
     <figure style="margin:0"><img src="progress/shots/s1107.png" alt="seed 1107" /><figcaption>s=1107</figcaption></figure>
-    <figure style="margin:0"><img src="progress/shots/s2026.png" alt="seed 2026" /><figcaption>s=2026</figcaption></figure>
-    <figure style="margin:0"><img src="progress/shots/s4929.png" alt="seed 4929" /><figcaption>s=4929</figcaption></figure>
-    <figure style="margin:0"><img src="progress/shots/s88.png" alt="seed 88" /><figcaption>s=88</figcaption></figure>
-    <figure style="margin:0"><img src="progress/shots/s333.png" alt="seed 333" /><figcaption>s=333</figcaption></figure>
     <figure style="margin:0"><img src="progress/shots/s1500.png" alt="seed 1500" /><figcaption>s=1500</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s2026.png" alt="seed 2026" /><figcaption>s=2026</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s333.png" alt="seed 333" /><figcaption>s=333</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s4929.png" alt="seed 4929" /><figcaption>s=4929</figcaption></figure>
   </div>
 
-  <h2>This round — what actually changed</h2>
-  <p class="note">The previous round lost 5–0 and the note from the critics was: stop adding geometry, change how the marks look. So nothing new was layered on. Six things were replaced.</p>
-  <ol>
-    <li><strong>The nib.</strong> Strokes were butt-capped line segments at partial alpha, which is why everything read grey and seamed. A stroke is now a <em>filled</em> variable-width ribbon at full opacity — a solid wet core with loose filaments down each flank that catch and drop out on their own. Width comes from two octaves of pressure noise, ink pools at starts, stops and hard corners, and the nib lifts briefly where the paper tooth is high. Thin strokes skip more than fat ones.</li>
-    <li><strong>Doubled contours.</strong> Every head in the reference plates is two lines that touch and part, not one. <code>doubled</code> traces the whole contour a second time at a drifting offset.</li>
-    <li><strong>Hair owns the crown.</strong> It used to be a cap shape parked on top of the skull — a toupee. A mass is now built from two edges: a hairline pinned across the face, and <em>the skull's own silhouette above it</em>, pushed outward by the thickness of the hair. The head outline can no longer show through, and the mass wraps whatever the skull does under yaw. Combed and ribbed variants run stroke-by-stroke from the outer edge down to the hairline without crossing.</li>
-    <li><strong>Lumpy skulls.</strong> The outline was a convex hull, which can only ever be an egg. It is now the radial extent of the projected skull plus a per-seed lump profile on integer harmonics, so it can dent inward, and one optional flattened facet — a squared temple, a cut-off jaw.</li>
-    <li><strong>One heavy nose.</strong> Built on the face's projected vertical axis rather than raw 3D points, so it rides the skull through a turn instead of walking across the cheek. One unbroken run from between the brows to the tip, turning under into the nostril, at up to 1.5× the weight of anything else on the face.</li>
-    <li><strong>The body is drawn, not assembled.</strong> Gone: trapezoid chassis, ribbon tubes. The figure is one continuous silhouette — neck, shoulders, sides, legs, round the shoes — with the arms as their own shapes laid in front of it. Clothes cut into that: necklines, hems, cuffs, plackets, stripes clipped to the body.</li>
-  </ol>
-  <p>Plus: every pen weight now scales with head size (small heads were reading as blobs), features are clamped inside the silhouette so nothing slides off on a hard turn, and the <em>another dude</em> button is written in the same ink as the drawing instead of typeset Georgia.</p>
+  <h2>What the critics kept saying</h2>
+  <p class="note">Three rounds of blind A/B against the plates. Every round they picked ours out, and mostly for the same reasons. Those reasons are the changelog.</p>
+
+  <h3>“Zero pressure modulation. Every stroke is the same width from entry to exit.”</h3>
+  <p>Said in three separate rounds, and correct all three times. The pressure noise had a wavelength longer than most strokes, so each line drew one sample of it and came out at a constant width. The wave is now scaled to the <em>stroke</em> — one to five swells along it whatever its length — so a contour thins through a straight and bears down through a turn. Underneath that, a stroke is a filled variable-width ribbon at full opacity: a wet core plus loose filaments down each flank that catch and drop out on their own. The old strokes were butt-capped segments at partial alpha, which is why everything read grey and seamed.</p>
+
+  <h3>“The contour is one uninterrupted noise-perturbed circle, which is why the faces read as stickers rather than heads.”</h3>
+  <p>A head is now a cranium drawn over and a jaw drawn under. They overshoot and cross where they meet, the jaw carries about 30% more weight, and one cheek gets restated on one side only.</p>
+
+  <h3>“Hair is a shape pasted on. The head reads whole underneath it.”</h3>
+  <p>Hair masses are built from two edges: a hairline pinned across the face, and <em>the skull's own silhouette above it</em>, pushed outward by the thickness of the hair. The head outline can no longer show through, and the mass wraps whatever the skull does under yaw. The outer edge is made of stroke ends rather than a filled polygon; the hairline stays a clean cut, because a hairline is a decision.</p>
+
+  <h3>“Every skull is widest at the same relative height.”</h3>
+  <p>The outline used to be a convex hull, which can only ever be an egg. It is now the radial extent of the projected skull plus a per-seed lump profile on integer harmonics — so it can dent <em>inward</em> — with an optional brow ridge and one flat facet. Skulls pick from six archetypes: round, long-jaw, tall cranium, block, pear, egg. Silhouette is all that reads at grid scale.</p>
+
+  <h3>“Short hairs of identical length, spacing and weight radiating perpendicular to the outline — including where no hair grows.”</h3>
+  <p>Strays now come in one to three tufts, at wildly mixed lengths, with curl, and only on some heads.</p>
+
+  <h3>“The nose is one stamped glyph.”</h3>
+  <p>It is built on the face's projected vertical axis rather than raw 3D points, so it rides a turn instead of walking across the cheek. One unbroken run from between the brows to the tip that <em>breaks direction once at the bridge</em>, tilts a few degrees off the head axis, turns under into the nostril, and carries up to 1.9× the weight of anything else on the face.</p>
+
+  <h3>“Repeated letters are identical. Fatal. A hand never repeats.”</h3>
+  <p>Each glyph is now sheared, unevenly squashed and control-point jittered, so the two O's in a name never superimpose. The baseline drifts and does not come back, the end of a word gets cramped and drops, strokes overshoot their joins, case is mixed, and the underline is a scratch in two or three goes.</p>
+
+  <h3>“The body is assembled; the head is drawn.”</h3>
+  <p>Gone: trapezoid chassis, ribbon tubes. The figure is one continuous silhouette — neck, shoulders, sides, legs, round the shoes — with the arms as their own shapes laid in front of it, at the same pen weight and the same wobble as the head. Straight runs are subdivided so the pen has somewhere to wander. Cloth has folds at the armpit, gathers above the hem, shadow under it, pocket marks, and hands.</p>
+
+  <h3>“The paper is a single flat RGB value with no fibre or tooth.”</h3>
+  <p>Blooms, then fibre lying in the sheet, then tooth, then the odd fleck of pulp. And the tooth that shows through a black mass now appears in patches where the sheet rides high, not as an even sprinkle.</p>
 
   <h2>Still open</h2>
   <ul>
-    <li>Nose variety — the long one dominates; the reference has more kinds of nose than we do.</li>
     <li>Hatched hair is lighter than the reference's.</li>
-    <li>Mouths are still mostly a horizontal dash.</li>
-    <li>The body has no reference plate to be judged against, so it is judged on its own terms.</li>
+    <li>The body has no reference plate to be judged against, so it is judged only on whether it looks like the same hand as the head.</li>
+    <li>Nose variety: the long one still dominates.</li>
   </ul>
 </main>
 </body>

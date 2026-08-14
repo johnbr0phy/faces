@@ -132,7 +132,7 @@
     if (n < 2) return;
 
     // hand wobble, applied along the path normal so corners survive
-    const amp = opt.wobble ?? Math.min(2.9, 0.34 + L * 0.017);
+    const amp = opt.wobble ?? Math.min(2.0, 0.26 + L * 0.011);
     const N0 = normals(S);
     const P = new Array(n);
     for (let i = 0; i < n; i++) {
@@ -180,7 +180,7 @@
       // the nib lifts rarely and briefly; a dashed line is a broken pen,
       // not a dry one. Thin strokes skip more than fat ones.
       const dry = fbm2(u * 0.19 + 11, sd * 0.02, sd + 137);
-      const thr = 0.155 * dryK * (w < 1.3 ? 1.35 : w > 2.6 ? 0.6 : 1);
+      const thr = 0.125 * dryK * (w < 1.3 ? 1.4 : w > 2.6 ? 0.5 : 1);
       live[i] = !(dryK > 0 && dry < thr && i > 1 && i < n - 2);
     }
 
@@ -228,14 +228,10 @@
       }
     };
 
-    band(0, 0.68, sd, 0);
-    if (w > 0.9) {
-      band(-0.34, 0.34, sd + 401, 0.4);
-      band(0.34, 0.34, sd + 733, 0.42);
-    }
-    if (w > 2.2) {
-      band(-0.5, 0.22, sd + 907, 0.55);
-      band(0.5, 0.22, sd + 1213, 0.57);
+    band(0, 0.82, sd, 0);
+    if (w > 1.7) {
+      band(-0.32, 0.3, sd + 401, 0.45);
+      band(0.32, 0.3, sd + 733, 0.47);
     }
     // pools where the nib lingered
     for (let k = 3; k < n - 3; k += 2) {
@@ -254,7 +250,7 @@
     nib(c, rng, path, opt);
     // A contour the hand traced twice all the way round. Every head in the
     // reference plates is two lines that touch and part, not one.
-    if (opt.doubled && rng.chance(0.72)) {
+    if (opt.doubled && rng.chance(0.4)) {
       const dn = normals(path);
       const off = rng.f(1.0, 2.1) * (rng.chance(0.5) ? 1 : -1);
       const moved = path.map((q, i) => {
@@ -782,12 +778,12 @@
     const w0 = skull.s * 0.03 * (skull.pen || 1);
     const cranium = arc(-ov, Math.round(n * 0.5) + ov);
     const jaw = arc(Math.round(n * 0.5) - ov, n + ov);
-    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.85, 1.02), dry: 0.45, doubled: rng.chance(0.55) });
-    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.1, 1.4), dry: 0.35, doubled: rng.chance(0.7) });
+    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.88, 1.05), dry: 0.3, doubled: rng.chance(0.35) });
+    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.15, 1.45), dry: 0.22, doubled: rng.chance(0.42) });
     if (rng.chance(0.35)) {
       // a cheek restated on one side only
       const a0 = Math.round(n * rng.f(0.02, 0.12));
-      inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.75, dry: 1.2 });
+      inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.7, dry: 0.9 });
     }
 
     const earL = pin(skull, { x: -0.92, y: 0.02, z: 0.05 });
@@ -841,6 +837,15 @@
       const temple = Math.pow(Math.abs(Math.sin(u)), 1.4);
       const center = Math.max(0, Math.cos(u));
       let y = lineY - recede * temple + bangs * center + sideBias * Math.sin(u);
+      // A hairline has a shape of its own — a peak, a sweep, a jagged cut —
+      // otherwise every black mass on the sheet is the same crescent.
+      const sh = opt.shape;
+      if (sh === "peak") y += Math.pow(center, 2.2) * 0.16 - temple * 0.05;
+      else if (sh === "round") y -= center * 0.11;
+      else if (sh === "sweep") y += Math.sin(u) * 0.19 + center * 0.04;
+      else if (sh === "receded") y += Math.pow(center, 1.6) * 0.1 - temple * 0.16;
+      else if (sh === "jagged") y += (Math.round(Math.sin(u * 4.7 + 1.3) * 2) / 2) * 0.07;
+      else if (sh === "low") y += 0.07 - temple * 0.03;
       y += (fbm2(u * 1.6 + 4, skull.yaw * 2 + (rng.seed % 53) * 0.07, rng.seed) - 0.5) * wob * 2;
       y = clamp(y, -0.95, 0.3);
       const p = pin(skull, sphere(u, Math.asin(clamp(y, -0.995, 0.995))));
@@ -1007,8 +1012,9 @@
 
   function drawHair(c, rng, skull, hull, style, color) {
     const s = skull.s;
+    const shape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
     const mk = (opt) => {
-      const h = hairMass(skull, hull, rng, opt);
+      const h = hairMass(skull, hull, rng, Object.assign({ shape }, opt));
       if (h) {
         h._cx = skull.cx;
         h._cy = skull.cy;
@@ -1380,12 +1386,16 @@
     };
 
     if (style === "tri") {
-      inkPoly(c, rng, [A(0, rng.f(-3, 3)), A(drop, -s * 0.19 * lean), A(drop, s * 0.19 * lean)], {
-        closed: true,
-        w: w * 0.9,
-        passes: 2,
-        dry: 0.4,
-      });
+      // a wedge, drawn in two goes, never the same triangle twice
+      const apex = A(rng.f(-0.04, 0.06) * s, rng.f(-4, 4));
+      const wL = A(drop * rng.f(0.86, 1.0), -s * rng.f(0.12, 0.24) * lean);
+      const wR = A(drop * rng.f(0.9, 1.06), s * rng.f(0.14, 0.26) * lean);
+      inkPoly(c, rng, [apex, wL], { w: w * rng.f(0.8, 1.05), dry: 0.35 });
+      inkPoly(c, rng, [apex, wR], { w: w * rng.f(0.7, 0.95), dry: 0.4 });
+      if (rng.chance(0.78)) {
+        inkPoly(c, rng, [wL, A(drop * 1.02, rng.f(-3, 3)), wR], { w: w * rng.f(0.6, 0.9), dry: 0.5 });
+      }
+      if (rng.chance(0.4)) inkCirc(c, rng, wR.x, wR.y, s * 0.02, w * 0.45, true);
       return;
     }
 
@@ -1626,10 +1636,14 @@
     const kneeY = hipY + s * rng.f(0.85, 1.05);
     const footY = hipY + s * rng.f(1.7, 2.05);
     const aw0 = rng.f(0.17, 0.22);
-    const armR = (t) => s * (aw0 - (aw0 - rng.f(0.075, 0.1)) * Math.pow(t, 0.8));
+    const armR = (t) => s * (aw0 - (aw0 - 0.082) * Math.pow(t, 0.75)) * (0.94 + 0.12 * fbm2(t * 3.4, aw0 * 90, 991));
     const legR = (t) => s * (rng.f(0.18, 0.23) - 0.065 * t);
     const pose = clothes.pose;
     const shrug = rng.f(-0.06, 0.1);
+    // no two sides of a drawn person agree
+    const asymL = rng.f(0.86, 1.14);
+    const asymR = rng.f(0.86, 1.14);
+    const asym = (side) => (side < 0 ? asymL : asymR);
 
     const P = (x, y) => ({ x: cx + x + lx * (y - neckY) / (s * 2), y });
 
@@ -1646,17 +1660,18 @@
         return [sh, P(side * (shW + s * 0.14), shY + s * 0.62), P(-side * s * 0.16, shY + s * 0.95)];
       }
       // hanging
+      const a = asym(side);
       return [
         sh,
-        P(side * (shW + s * rng.f(0.02, 0.13)), shY + s * rng.f(0.72, 0.92)),
-        P(side * (shW + s * rng.f(-0.02, 0.2)), shY + s * rng.f(1.5, 1.78)),
+        P(side * (shW + s * rng.f(0.02, 0.13)) * a, shY + s * rng.f(0.72, 0.92) * a),
+        P(side * (shW + s * rng.f(-0.02, 0.2)) * a, shY + s * rng.f(1.5, 1.78) * a),
       ];
     };
 
     const leg = (side) => {
       const drop = footY + s * rng.f(-0.09, 0.09);
       return [
-        P(side * hipW * rng.f(0.48, 0.62), hipY - s * 0.05),
+        P(side * hipW * rng.f(0.48, 0.62) * asym(side), hipY - s * 0.05),
         P(side * (hipW * 0.5 + s * rng.f(-0.14, 0.1)), kneeY + s * rng.f(-0.1, 0.1)),
         P(side * (hipW * 0.46 + s * rng.f(-0.16, 0.16)), drop),
       ];
@@ -1685,8 +1700,8 @@
     // ---- one continuous silhouette ----
     const neckL = P(-s * rng.f(0.15, 0.21), neckY - s * 0.42);
     const neckR = P(s * rng.f(0.15, 0.21), neckY - s * 0.42);
-    const shoulderL = P(-shW, shY + s * shrug * -1);
-    const shoulderR = P(shW, shY + s * shrug);
+    const shoulderL = P(-shW * asymL, shY + s * shrug * -1);
+    const shoulderR = P(shW * asymR, shY + s * shrug + s * rng.f(-0.06, 0.06));
     const waistL = P(-hipW * 1.02, shY + s * 1.25);
     const waistR = P(hipW * 1.02, shY + s * 1.25);
     const hipL = P(-hipW, hipY);
@@ -1868,14 +1883,15 @@
       ], { w: s * (wk ?? 0.014), dry: 0.9, wobble: s * 0.02 });
 
     for (let side = -1; side <= 1; side += 2) {
+      if (rng.chance(0.4)) continue; // not every shoulder gets one
       const sx0 = side < 0 ? shoulderL : shoulderR;
-      const n = rng.i(1, 3);
+      const n = rng.i(1, 2);
       for (let i = 0; i < n; i++) {
         fold(
-          sx0.x - side * s * rng.f(0.06, 0.2),
-          sx0.y + s * rng.f(0.12, 0.3),
-          sx0.x - side * s * rng.f(0.3, 0.55),
-          sx0.y + s * rng.f(0.45, 0.8)
+          sx0.x - side * s * rng.f(0.1, 0.28),
+          sx0.y + s * rng.f(0.16, 0.4),
+          sx0.x - side * s * rng.f(0.34, 0.7),
+          sx0.y + s * rng.f(0.5, 1.0)
         );
       }
     }
@@ -1913,12 +1929,12 @@
           ], { w: heavy, dry: 0.5, wobble: s * 0.03 });
         }
       } else if (clothes.pattern === "vstripe") {
-        for (let x = cx - shW * 1.3; x < cx + shW * 1.3; x += pitch) {
+        for (let x = cx - shW * 1.3; x < cx + shW * 1.3; x += pitch * rng.f(0.75, 1.3)) {
           inkPoly(c, rng, [
-            { x, y: shY - s * 0.1 },
+            { x, y: shY + s * rng.f(-0.1, 0.15) },
             { x: x + rng.f(-4, 4), y: (shY + hemY) / 2 },
-            { x: x + rng.f(-5, 5), y: hemY + s * 0.1 },
-          ], { w: heavy * 0.7, dry: 0.6, wobble: s * 0.03 });
+            { x: x + rng.f(-5, 5), y: hemY - s * rng.f(-0.1, 0.2) },
+          ], { w: heavy * 0.42, dry: 0.9, wobble: s * 0.03 });
         }
       } else if (clothes.pattern === "dark") {
         // a black garment, so the bottom of the page carries weight too
@@ -2201,14 +2217,16 @@
       "recede", "bald",
     ];
     const eyeStyles = ["open", "open", "open", "open", "dot", "dot", "slit", "angry", "x", "glasses", "glasses", "shades", "patch", "wink"];
-    const noseStyles = ["long", "long", "long", "long", "hook", "hook", "hook", "tri", "button"];
+    const noseStyles = ["long", "long", "long", "long", "long", "hook", "hook", "hook", "hook", "tri", "button", "button"];
     const mouthStyles = ["smile", "smile", "frown", "open", "open", "teeth", "smirk", "lips", "pucker", "line", "line"];
     const beardStyles = ["none", "none", "none", "stache", "goatee", "beard", "stubble"];
     const clothesKinds = ["tee", "hoodie", "jacket", "sweater"];
     const poses = ["down", "down", "pockets", "hips", "folded"];
-    const washes = [null, "#e8c4a8", "#c4a07a", "#9aa87a", "#b9c4c8", "#d8b090"];
+    // Value comes from hatching and solid black. The reference sheets have no
+    // fill at all, and a sage shirt under an ink head reads as two media.
+    const washes = [null];
     const hairColors = ["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"];
-    const skins = [null, "#e8d2bc", "#d8c0a4", "#c9a888", null];
+    const skins = [null];
 
     return {
       name: rng.chance(0.55) ? rng.pick(FIRST) : `${rng.pick(FIRST)} ${rng.pick(LAST)}`,
@@ -2253,7 +2271,7 @@
     paper(c, w, h, rng);
     const s = dude.size;
     const cx = w * rng.f(0.38, 0.48) + rng.f(-8, 8);
-    const cy = h * 0.245 + rng.f(-10, 10);
+    const cy = h * 0.225 + rng.f(-10, 10);
 
     const skull = new Skull(cx, cy, s, dude.yaw, dude.pitch, dude.roll, dude.ratio, dude.depth, {
       jaw: dude.jaw,
@@ -2275,7 +2293,7 @@
     skull.faceY = dude.faceY;
     skull.gaze = dude.gaze;
     skull.eyeGap = dude.eyeGap;
-    const body = drawBody(c, rng, cx, cy + s * 1.18, s * 0.8, dude.lean + dude.yaw * 0.25, dude.clothes);
+    const body = drawBody(c, rng, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes);
     const hull = drawHead(c, rng, skull, dude.skin);
     drawHair(c, rng, skull, hull, dude.hair, dude.hairColor);
     drawBrows(c, rng, skull, dude.brows);
@@ -2303,7 +2321,8 @@
       nameX = cx + s * rng.f(1.0, 1.35);
       nameY = cy + s * rng.f(0.1, 0.6);
     }
-    nameX = Math.max(16, Math.min(w - size * String(dude.name).length * 0.95 - 14, nameX));
+    const nameW = size * (String(dude.name).length * 0.92 + 0.6);
+    nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
     drawName(c, rng, dude.name, nameX, nameY, size);
     grainPass(c);
@@ -2326,9 +2345,9 @@
       for (let col = 0; col < cols; col++) {
         const rng = new Rng((seed0 + (r * cols + col) * 7919) >>> 0);
         const d = makeDude(rng);
-        const s = Math.min(cw, ch) * rng.f(0.26, 0.42) * rowS;
-        const cx = cw * (col + 0.5) + rowDx + rng.f(-13, 13);
-        const cy = 18 + ch * (r + 0.5) + rowDy + rng.f(-11, 11);
+        const s = Math.min(cw, ch) * rng.f(0.27, 0.37) * rowS;
+        const cx = cw * (col + 0.5) + rowDx + rng.f(-7, 7);
+        const cy = 18 + ch * (r + 0.5) + rowDy + rng.f(-8, 8);
         const skull = new Skull(cx, cy, s, d.yaw, d.pitch, d.roll, d.ratio, d.depth, {
           jaw: d.jaw, chin: d.chin, crown: d.crown, cheek: d.cheek,
           lobeA: d.lobeA, lobeB: d.lobeB, lobeAmp: d.lobeAmp, lobePh: d.lobePh,
