@@ -1712,6 +1712,47 @@
     c.restore();
   }
 
+  // Shading down the shadow side of a face: strokes running in from the
+  // contour, crossed by a second pass, thinning as they go inward and
+  // overrunning the outline where they start. Not a filled band — the tone
+  // comes from how densely the lines pile up near the edge.
+  function cheekHatch(c, rng, skull, hull, side) {
+    const n = hull.length;
+    const s = skull.s;
+    // the jaw/cheek quadrant on one side: index 0 is left, n/4 is up,
+    // n/2 is right, 3n/4 is down
+    const centre = side < 0 ? n * 0.86 : n * 0.64;
+    const half = n * rng.f(0.07, 0.13);
+    const i0 = Math.round(centre - half);
+    const i1 = Math.round(centre + half);
+    const depth = s * rng.f(0.3, 0.62);
+    const passes = rng.chance(0.3) ? 3 : 2;
+    for (let pass = 0; pass < passes; pass++) {
+      const skew = (pass === 0 ? 1 : pass === 1 ? -1 : 0.2) * rng.f(0.35, 0.75);
+      const step = Math.max(1, Math.round((i1 - i0) / rng.i(9, 16)));
+      for (let i = i0; i <= i1; i += step) {
+        const p = hull[((Math.round(i) % n) + n) % n];
+        if (!p) continue;
+        const dx = p.x - skull.cx;
+        const dy = p.y - skull.cy;
+        const d = Math.hypot(dx, dy) || 1;
+        const nx = dx / d;
+        const ny = dy / d;
+        // rotate the inward normal to get the hatching angle
+        const cs = Math.cos(skew);
+        const sn = Math.sin(skew);
+        const hx = -nx * cs - ny * sn;
+        const hy = -ny * cs + nx * sn;
+        const out = s * rng.f(0.02, 0.07); // it starts outside the line
+        const len = depth * rng.f(0.55, 1.15);
+        nib(c, rng, [
+          { x: p.x - hx * out, y: p.y - hy * out },
+          { x: p.x + hx * len, y: p.y + hy * len },
+        ], { w: s * rng.f(0.015, 0.028), dry: 0.55, wobble: s * 0.012, taper: rng.f(0.15, 0.45) });
+      }
+    }
+  }
+
   function inkMass(c, rng, h, color, opt = {}) {
     if (!h) return;
     const { front, top, mass } = h;
@@ -3974,6 +4015,7 @@
       size: rng.f(102, 122) * (slight ? 0.96 : heavy ? 1.03 : 1),
       hair,
       hairTone: rng.pick(["solid", "solid", "cross", "cross", "half"]),
+      shade: rng.chance(0.26),
       hairColor: rng.pick(["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"]),
       eyes,
       nose: rng.pick(
@@ -4077,6 +4119,8 @@
     // is a closed loop with the nose laid across it and nothing erased
     const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
     headOutline(c, rng, skull, hull, gaps);
+    // the shadow falls away from the turn
+    if (dude.shade) cheekHatch(c, rng, skull, hull, -(Math.sign(prof.x) || 1));
     const inFront = [];
     const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront, dude.hairTone);
     drawBrows(c, rng, skull, dude.brows);
@@ -4524,6 +4568,7 @@
         const ears = drawEars(c, rng, skull);
         const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
         headOutline(c, rng, skull, hull, gaps);
+        if (d.shade) cheekHatch(c, rng, skull, hull, -(Math.sign(prof.x) || 1));
         const inFront = [];
         const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront, d.hairTone);
         drawBrows(c, rng, skull, d.brows);
