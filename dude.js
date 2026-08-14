@@ -4485,6 +4485,11 @@
   // the ends is close and always a shade generous.
   const BTN_TEXT = "another dude";
   const CREDITS = ["inspired by mannay", "ruined by @johnbr0"];
+  // The keys, written on the paper like everything else — and pressable, so
+  // the thing works on a phone, where there is no A to press. The first line
+  // says what pressing it will do, not what state he is in.
+  const LEGEND_MOVE = ["a  make him move", "a  let him rest"];
+  const LEGEND_MOTION = "m  something else";
 
   function inkWidth(text, size) {
     return size * (text.length * 0.95 + 0.9);
@@ -4499,7 +4504,7 @@
 
   // Worked out before anything is drawn, because the figure has to be fitted
   // into whatever is left above it.
-  function footerLayout(w, h) {
+  function footerLayout(w, h, moving) {
     const pad = Math.max(14, Math.min(w * 0.055, 34));
     const inner = w - pad * 2;
     // big enough to read on a phone, held back from shouting on a desktop,
@@ -4508,16 +4513,23 @@
     const cred = Math.max(11.5, Math.min(btn * 0.72, inner / 19.6));
     const credW = Math.max(inkWidth(CREDITS[0], cred), inkWidth(CREDITS[1], cred));
     const btnW = inkWidth(BTN_TEXT, btn);
+    const legend = [moving ? LEGEND_MOVE[1] : LEGEND_MOVE[0], LEGEND_MOTION];
+    // "something" has a descender; the label above it does not
+    const legLead = cred * 1.7;
+    const legW = Math.max(inkWidth(legend[0], cred), inkWidth(legend[1], cred));
+    // the label and the keys under it are one column now
+    const leftW = Math.max(btnW, legW);
+    const leftH = btn * 1.95 + legLead * legend.length;
     // side by side when the two columns fit with a gap worth the name, and
     // stacked when they do not — a phone gets the label over the credit
-    const cols = btnW + credW + pad * 3 <= w;
+    const cols = leftW + credW + pad * 3 <= w;
     // enough to clear the descenders on "inspired by" and "@johnbr0"
     const credLead = cred * 1.95;
     const bandH = cols
-      ? Math.max(btn * 1.5, credLead + cred * 1.45) + pad * 0.7
-      : btn * 1.9 + credLead + cred * 1.45 + pad * 0.4;
+      ? Math.max(leftH, credLead + cred * 1.45) + pad * 0.7
+      : btn * 1.95 + legLead * legend.length + credLead + cred * 1.9 + pad * 0.4;
     const bottom = h - Math.max(14, pad * 0.8) - safeBottom();
-    return { pad, btn, cred, btnW, credW, credLead, cols, bottom, top: bottom - bandH };
+    return { pad, btn, cred, btnW, credW, credLead, legend, legLead, legW, leftW, leftH, cols, bottom, top: bottom - bandH };
   }
 
   function drawFooter(c, seed, w, F) {
@@ -4535,11 +4547,21 @@
 
     // x is the glyph's centre line, so half a letter is added to make the
     // left margin on the page actually equal to the padding
+    // the keys, written under the label they belong with
+    const legendAt = (x, y0) => {
+      F.legend.forEach((t, i) => {
+        const y = y0 + i * F.legLead;
+        const a = drawName(c, rngFor(seed, "footer", 3 + i), t, x, y, F.cred, { caps: false, rule: false, w: 0.07 });
+        hits[i ? "motion" : "move"] = box(x, y, a, F.cred, Math.max(F.legLead, 34));
+      });
+    };
+
     if (F.cols) {
       const bx = F.pad + F.btn * 0.5;
-      const by = F.top + (F.bottom - F.top - F.btn * 1.5) * 0.5 + F.btn * 0.1;
+      const by = F.top + (F.bottom - F.top - F.leftH) * 0.5 + F.btn * 0.1;
       const adv = drawName(c, rngFor(seed, "footer", 0), BTN_TEXT, bx, by, F.btn, { caps: false, rule: true, w: 0.075 });
       hits.another = box(bx, by, adv, F.btn, 44);
+      legendAt(F.pad + F.cred * 0.5, by + F.btn * 1.85);
       const rx = w - F.pad - F.credW + F.cred * 0.5;
       const ry = F.top + (F.bottom - F.top - (F.credLead + F.cred * 1.45)) * 0.5 + F.cred * 0.1;
       CREDITS.forEach((t, i) => {
@@ -4552,7 +4574,9 @@
       const by = F.top + F.btn * 0.25;
       const adv = drawName(c, rngFor(seed, "footer", 0), BTN_TEXT, bx, by, F.btn, { caps: false, rule: true, w: 0.075 });
       hits.another = box(bx, by, adv, F.btn, 44);
-      const ry = by + F.btn * 1.9;
+      const ly = by + F.btn * 1.85;
+      legendAt(bx, ly);
+      const ry = ly + F.legLead * F.legend.length + F.cred * 0.25;
       CREDITS.forEach((t, i) => {
         const y = ry + i * F.credLead;
         const a = drawName(c, rngFor(seed, "footer", i + 1), t, bx, y, F.cred, { caps: false, rule: false, w: 0.07 });
@@ -4650,8 +4674,12 @@
     const was = MOTION;
     const ext = { up: 0, down: 0, left: 0, right: 0 };
     try {
-      for (let i = 0; i < 6; i++) {
-        MOTION = motionAt(kind, i / 6);
+      // Ten points round the cycle, not six: the frames between the samples
+      // are real frames, and a hand that reaches furthest between two of them
+      // would be clipped by the band that gets repainted.
+      const N = 10;
+      for (let i = 0; i < N; i++) {
+        MOTION = motionAt(kind, i / N);
         const e = figureExtent(seed, dude, `${kind}${i}`);
         ext.up = Math.max(ext.up, e.up);
         ext.down = Math.max(ext.down, e.down);
@@ -4666,7 +4694,7 @@
 
   function drawDude(c, R, dude, w, h, seed) {
     paper(c, w, h, R.paper);
-    const foot = footerLayout(w, h);
+    const foot = footerLayout(w, h, false);
     // Placement draws from its own stream. It used to come off "mark", which
     // meant the measuring pass and the real pass were no longer the same dude
     // — and it is the wrong stream anyway: where he stands on the sheet is
@@ -4966,7 +4994,7 @@
   // boils the way a line does when a hand draws it twice, and the head turns
   // in space rather than skewing on the page.
   function makeAnimation(canvasEl, seed, dude, w, h, dpr, kind) {
-    const foot = footerLayout(w, h);
+    const foot = footerLayout(w, h, true);
     const ext = motionExtent(seed, dude, kind);
     const place = rngFor(seed, "place");
 
@@ -4981,16 +5009,20 @@
     const cx = Math.max(mx + ext.left * k, Math.min(w - mx - ext.right * k, w * 0.5));
     const cy = top + ext.up * k + Math.max(0, availH - (ext.up + ext.down + nameRoom) * k) * 0.5;
 
-    // the strip of sheet the figure can reach, so only that gets repainted
-    const pad = 6;
+    // The strip of sheet the figure can reach, so only that gets repainted.
+    // Snapped to whole DEVICE pixels: a source rectangle landing on a half
+    // pixel makes drawImage resample, and the resampled edge shows up as a
+    // seam down the paper exactly where the band stops.
+    const pad = 14;
+    const snap = (v, up) => (up ? Math.ceil(v * dpr) : Math.floor(v * dpr)) / dpr;
     const box = {
-      x: Math.max(0, Math.floor(cx - ext.left * k - pad)),
-      y: Math.max(0, Math.floor(cy - ext.up * k - pad)),
+      x: Math.max(0, snap(cx - ext.left * k - pad, false)),
+      y: Math.max(0, snap(cy - ext.up * k - pad, false)),
       w: 0,
       h: 0,
     };
-    box.w = Math.min(w, Math.ceil(cx + ext.right * k + pad)) - box.x;
-    box.h = Math.min(h, Math.ceil(cy + ext.down * k + pad)) - box.y;
+    box.w = Math.min(w, snap(cx + ext.right * k + pad, true)) - box.x;
+    box.h = Math.min(h, snap(cy + ext.down * k + pad, true)) - box.y;
 
     // ---- the sheet, once ----
     const bd = document.createElement("canvas");
@@ -5031,7 +5063,12 @@
         c.setTransform(dpr, 0, 0, dpr, 0, 0);
         // Only the band he can reach is repainted. Blitting the whole sheet
         // every frame is most of the cost of a frame on a big window.
-        c.drawImage(bd, box.x * dpr, box.y * dpr, box.w * dpr, box.h * dpr, box.x, box.y, box.w, box.h);
+        c.drawImage(
+          bd,
+          Math.round(box.x * dpr), Math.round(box.y * dpr),
+          Math.round(box.w * dpr), Math.round(box.h * dpr),
+          box.x, box.y, box.w, box.h
+        );
         c.beginPath();
         c.rect(box.x, box.y, box.w, box.h);
         c.clip();
@@ -5065,7 +5102,13 @@
   // properly instead of being caught in passing
   const forcedPhase = Q.get("ph") !== null && !isNaN(parseFloat(Q.get("ph"))) ? parseFloat(Q.get("ph")) : null;
 
-  const links = { another: btn, a: document.getElementById("link-a"), b: document.getElementById("link-b") };
+  const links = {
+    another: btn,
+    a: document.getElementById("link-a"),
+    b: document.getElementById("link-b"),
+    move: document.getElementById("move"),
+    motion: document.getElementById("motion"),
+  };
 
   // The words are ink on the paper, so the button and the links are invisible
   // boxes laid over exactly where that ink landed — the page stays one
@@ -5090,6 +5133,7 @@
   let count = 0;
   let seed = parseSeed();
   let anim = null;
+  let nextKind = null;
   let lastDude = null;
   let lastCssW = 0;
   let lastCssH = 0;
@@ -5153,7 +5197,8 @@
       drawPlate(ctx, cssW, cssH, seed);
       placeHits(null);
     } else if (animOn) {
-      const kind = forcedMotion || MOTION_NAMES[rngFor(seed, "motion").i(0, MOTION_NAMES.length - 1)];
+      const kind = nextKind || forcedMotion || MOTION_NAMES[rngFor(seed, "motion").i(0, MOTION_NAMES.length - 1)];
+      nextKind = null;
       const book = makeAnimation(canvas, seed, dude, cssW, cssH, dpr, kind);
       anim = { book, kind };
       placeHits(book.hits);
@@ -5176,7 +5221,43 @@
     render((Math.random() * 0xffffffff) >>> 0);
   }
 
+  // The words on the paper and the keys do the same two things, so both go
+  // through here. A phone has no A to press.
+  function toggleMove() {
+    if (PLATE) return;
+    animOn = !animOn;
+    const url = new URL(location.href);
+    if (animOn) url.searchParams.set("anim", "1");
+    else url.searchParams.delete("anim");
+    history.replaceState(null, "", url);
+    count -= 1;
+    render(seed);
+  }
+
+  // Something else to do. If he is standing still, this starts him — a label
+  // that does nothing until you have found the other label first is not a
+  // label, it is a puzzle.
+  function nextMotion() {
+    if (PLATE) return;
+    if (!anim) {
+      nextKind = MOTION_NAMES[(MOTION_NAMES.indexOf(nextKind || MOTION_NAMES[0]) + 1) % MOTION_NAMES.length];
+      if (!animOn) return toggleMove();
+    }
+    const i = MOTION_NAMES.indexOf(anim.kind);
+    const kind = MOTION_NAMES[(i + 1) % MOTION_NAMES.length];
+    const book = makeAnimation(canvas, seed, lastDude, lastCssW, lastCssH, lastDpr, kind);
+    anim = { book, kind };
+    placeHits(book.hits);
+    book.blit();
+    startedAt = 0;
+    frameNo = -1;
+    book.draw(0, 0);
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+
   btn.addEventListener("click", another);
+  if (links.move) links.move.addEventListener("click", toggleMove);
+  if (links.motion) links.motion.addEventListener("click", nextMotion);
   window.addEventListener("keydown", (e) => {
     if (e.target !== document.body) return;
     if (e.code === "Space") {
@@ -5185,29 +5266,15 @@
       return;
     }
     if (PLATE) return;
-    // A: make him move, or stop him. M: give him something else to do.
+    // A: make him move, or let him rest. M: give him something else to do.
     if (e.key === "a" || e.key === "A") {
       e.preventDefault();
-      animOn = !animOn;
-      const url = new URL(location.href);
-      if (animOn) url.searchParams.set("anim", "1");
-      else url.searchParams.delete("anim");
-      history.replaceState(null, "", url);
-      count -= 1;
-      render(seed);
+      toggleMove();
       return;
     }
-    if ((e.key === "m" || e.key === "M") && anim) {
+    if (e.key === "m" || e.key === "M") {
       e.preventDefault();
-      const i = MOTION_NAMES.indexOf(anim.kind);
-      const kind = MOTION_NAMES[(i + 1) % MOTION_NAMES.length];
-      const book = makeAnimation(canvas, seed, lastDude, lastCssW, lastCssH, lastDpr, kind);
-      anim = { book, kind };
-      placeHits(book.hits);
-      book.blit();
-      startedAt = 0;
-      frameNo = -1;
-      book.draw(0, 0);
+      nextMotion();
     }
   });
   // A phone fires resize for the address bar sliding away. Redrawing the whole

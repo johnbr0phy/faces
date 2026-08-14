@@ -40,7 +40,9 @@ html, body {
    positions are set from script to match exactly where the ink landed. */
 #another,
 #link-a,
-#link-b {
+#link-b,
+#move,
+#motion {
   position: absolute;
   appearance: none;
   background: transparent;
@@ -55,11 +57,15 @@ html, body {
    shadow on the paper under the thumb is the whole feedback. */
 #another:active,
 #link-a:active,
-#link-b:active { background: rgba(35, 32, 25, 0.08); }
+#link-b:active,
+#move:active,
+#motion:active { background: rgba(35, 32, 25, 0.08); }
 
 #another:focus-visible,
 #link-a:focus-visible,
-#link-b:focus-visible {
+#link-b:focus-visible,
+#move:focus-visible,
+#motion:focus-visible {
   outline: 1px dashed var(--ink);
   outline-offset: 3px;
 }

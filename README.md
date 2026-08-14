@@ -36,9 +36,11 @@ then visit `http://localhost:8765`.
 Space, click, or tap for another. The seed is in the URL (`?s=4929`), so every
 dude is reproducible.
 
-Press **A** to make him move, and **M** to give him something else to do — or
-load `?anim=1`, with `?m=walk|wave|jump|look|dance|shrug` to insist on one.
-Without `?m` he does whatever his seed says he does.
+`a  make him move` and `m  something else` are written under the label at the
+foot of the page, in the same hand as everything else, and pressing the words
+does what pressing the key does — a phone has no A to press. `?anim=1` starts
+him moving, and `?m=walk|wave|jump|look|dance|shrug` insists on one; without
+`?m` he does whatever his seed says he does.
 
 He is not a picture being tweened. The head is already a skull with a yaw, a
 pitch and a roll, and the body is already a stick rig the silhouette is grown
