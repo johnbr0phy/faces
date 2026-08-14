@@ -398,7 +398,8 @@
     poly.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
     c.closePath();
     c.clip();
-    const n = Math.min(700, Math.round(area / 90));
+    // match the density of the paper pass exactly, or the patch reads darker
+    const n = Math.min(900, Math.round(area / 675));
     for (let i = 0; i < n; i++) {
       const a = rng.f(0, Math.PI * 2);
       const len = rng.f(3, 20);
@@ -411,7 +412,7 @@
       c.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
       c.stroke();
     }
-    for (let i = 0; i < n * 4; i++) {
+    for (let i = 0; i < Math.round(area / 145); i++) {
       c.fillStyle = rng.chance(0.6) ? "rgba(48,36,22,0.032)" : "rgba(255,255,255,0.034)";
       c.fillRect(rng.f(x0, x1), rng.f(y0, y1), rng.f(0.3, 1.2), rng.f(0.25, 0.8));
     }
