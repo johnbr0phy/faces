@@ -974,31 +974,48 @@
       else if (sh === "jagged") y += (Math.round(Math.sin(u * 4.7 + 1.3) * 2) / 2) * 0.07;
       else if (sh === "low") y += 0.07 - temple * 0.03;
       y += (fbm2(u * 1.6 + 4, skull.yaw * 2 + (rng.seed % 53) * 0.07, rng.seed) - 0.5) * wob * 2;
-      y = clamp(y, -0.95, 0.3);
+      y = clamp(y, -0.95, 0.08);
       const p = pin(skull, sphere(u, Math.asin(clamp(y, -0.995, 0.995))));
       pts.push(p);
     }
     return pts;
   }
 
-  // The stretch of skull silhouette above a→b, walked b→a and pushed outward.
+  // The stretch of skull silhouette between the two temples, walked over the
+  // top and pushed outward.
+  //
+  // This used to select hull points lying above the chord from one temple to
+  // the other. That works head-on, but on a hard turn the two temples end up
+  // on the same side of the skull, the chord goes near-vertical, and "above
+  // it" is half the head — which the hair then fills in solid.
+  // Walking round by angle instead is indifferent to the pose.
   function crownArc(skull, hull, a, b, puff, rng) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.hypot(dx, dy) || 1;
-    const ux = dx / d;
-    const uy = dy / d;
-    const nx = uy; // "above" the a→b line is the negative-normal side
-    const ny = -ux;
-    const above = [];
-    for (const p of hull) {
-      const side = (p.x - a.x) * nx + (p.y - a.y) * ny;
-      if (side <= 0.5) continue;
-      above.push({ p, t: (p.x - a.x) * ux + (p.y - a.y) * uy, h: side });
-    }
-    above.sort((m, n) => n.t - m.t); // b-end first, walking back toward a
-    return above.map((m, i) => {
-      const q = m.p;
+    const n = hull.length;
+    if (n < 6) return [];
+    const idx = (p) => {
+      const ang = Math.atan2(p.y - skull.cy, p.x - skull.cx);
+      return ((Math.round(((ang + Math.PI) / (Math.PI * 2)) * n) % n) + n) % n;
+    };
+    const ia = idx(a);
+    const ib = idx(b);
+    const walk = (from, to, step) => {
+      const out = [];
+      let i = from;
+      for (let k = 0; k <= n; k++) {
+        out.push(i);
+        if (i === to) break;
+        i = (i + step + n) % n;
+      }
+      return out;
+    };
+    const topIdx = Math.round(n * 0.25) % n; // angle -PI/2 is straight up
+    const up = walk(ib, ia, -1);
+    const down = walk(ib, ia, 1);
+    let chosen = up.includes(topIdx) ? up : down;
+    // a crown arc never needs more than about half the outline
+    if (chosen.length > n * 0.72) chosen = chosen.length === up.length ? down : up;
+    return chosen.map((hi, i) => {
+      const q = hull[hi];
       const ox = q.x - skull.cx;
       const oy = q.y - skull.cy;
       const len = Math.hypot(ox, oy) || 1;
@@ -1008,17 +1025,36 @@
     });
   }
 
+  // Keep only the stretch of hairline that is actually on the front of the
+  // skull. The ends of the full sweep have wrapped round the back, where they
+  // project INWARD — so using them as the temples put both "temples" near the
+  // crown and left the crown arc a seven-point sliver.
+  function frontRun(pts) {
+    let best = null;
+    let run = null;
+    for (const p of pts) {
+      if (p.z === undefined || p.z > -0.02) {
+        if (!run) run = [p];
+        else run.push(p);
+        if (!best || run.length > best.length) best = run;
+      } else {
+        run = null;
+      }
+    }
+    return best && best.length >= 3 ? best : pts;
+  }
+
   function hairMass(skull, hull, rng, opt = {}) {
     // per-seed volume and reach, on top of whatever the style asked for, so
     // the same cap does not come out at forty scales and rotations
     opt = Object.assign({}, opt, {
-      puff: (opt.puff ?? 0.05) * rng.f(0.6, 1.45),
+      puff: (opt.puff ?? 0.05) * rng.f(1.05, 2.4),
       // u spans (t-0.5)*PI*wrap*1.9, so wrap above ~1.05 sends the hairline
       // round the back of the skull and the mass swallows the whole face
       wrap: Math.min(1.05, (opt.wrap ?? 1.02) * rng.f(0.84, 1.08)),
       sideBias: (opt.sideBias ?? 0) + rng.f(-0.1, 0.1),
     });
-    const front = hairline(skull, rng, opt);
+    const front = frontRun(hairline(skull, rng, opt));
     if (front.length < 3) return null;
     const a = front[0];
     const b = front[front.length - 1];
@@ -1026,6 +1062,33 @@
     const top = crownArc(skull, hull, a, b, puff, rng);
     if (top.length < 2) return null;
     return { front, top, mass: front.concat(top) };
+  }
+
+  // Two rings round the skull at different heights, kept to the longest span
+  // where BOTH are on the visible side, returned as a closed ribbon.
+  function ribbonBetween(skull, yHi, yLo, wrap = 0.92) {
+    const n = 40;
+    const vHi = Math.asin(Math.max(-0.95, Math.min(0.15, yHi)));
+    const vLo = Math.asin(Math.max(-0.95, Math.min(0.15, yLo)));
+    let best = null;
+    let run = null;
+    for (let i = 0; i <= n; i++) {
+      const u = (i / n - 0.5) * Math.PI * 2 * wrap;
+      const a = pin(skull, sphere(u, vHi));
+      const b = pin(skull, sphere(u, vLo));
+      if (a.z > -0.25 && b.z > -0.25) {
+        if (!run) run = { a: [a], b: [b] };
+        else {
+          run.a.push(a);
+          run.b.push(b);
+        }
+        if (!best || run.a.length > best.a.length) best = run;
+      } else {
+        run = null;
+      }
+    }
+    if (!best || best.a.length < 3) return null;
+    return { hi: best.a, lo: best.b, poly: best.a.concat(best.b.slice().reverse()) };
   }
 
   function hairlineRing(skull, hl, wrap = 0.92) {
@@ -1428,13 +1491,14 @@
       // hair first, then a band cutting across it
       const h = mk({ lineY: -0.5, puff: 0.09, wob: 0.05 });
       if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.5) ? 7 : 0, strayLen: 1.3 });
-      const hi = hairlineRing(skull, -0.5, 0.92);
-      const lo = hairlineRing(skull, -0.34, 0.92);
-      const band = hi.concat(lo.slice().reverse());
-      if (band.length > 4) {
-        inkMassFill(c, rng, band, color, { bite: s * 0.022 });
-        inkPoly(c, rng, hi, { w: s * 0.02, dry: 0.5 });
-        inkPoly(c, rng, lo, { w: s * 0.024, dry: 0.4 });
+      // Both edges must be sampled over the SAME visible span. Culling each
+      // ring independently by depth leaves them ending at different places,
+      // and the polygon built from the two crosses itself and floods the face.
+      const band = ribbonBetween(skull, -0.5, -0.34, 0.92);
+      if (band) {
+        inkMassFill(c, rng, band.poly, color, { bite: s * 0.022 });
+        inkPoly(c, rng, band.hi, { w: s * 0.02, dry: 0.5 });
+        inkPoly(c, rng, band.lo, { w: s * 0.024, dry: 0.4 });
       }
       return;
     }
@@ -1931,17 +1995,48 @@
     }
   }
 
+  // Heads come in kinds; bodies were one trapezoid with the dials nudged, so
+  // six different men wore the identical mannequin. Same treatment: shoulder
+  // and hip width, torso and leg length, and the waist profile all move
+  // together, because a barrel-chested man is not a lanky one with wider
+  // shoulders.
+  function bodyKind(rng) {
+    const kinds = [
+      // stocky: wide, short, thick through the middle
+      () => ({ shW: rng.f(1.14, 1.42), hipW: rng.f(0.92, 1.18), torso: rng.f(1.6, 1.9),
+               legs: rng.f(1.3, 1.62), waist: rng.f(1.02, 1.16), armW: rng.f(0.2, 0.25) }),
+      // lanky: narrow, long, straight
+      () => ({ shW: rng.f(0.7, 0.9), hipW: rng.f(0.48, 0.66), torso: rng.f(2.2, 2.6),
+               legs: rng.f(2.1, 2.55), waist: rng.f(0.86, 0.98), armW: rng.f(0.13, 0.17) }),
+      // pot: narrow up top, heavy low down
+      () => ({ shW: rng.f(0.8, 1.0), hipW: rng.f(1.0, 1.3), torso: rng.f(1.85, 2.15),
+               legs: rng.f(1.5, 1.85), waist: rng.f(1.12, 1.34), armW: rng.f(0.17, 0.22) }),
+      // taper: broad shoulders down to nothing
+      () => ({ shW: rng.f(1.2, 1.5), hipW: rng.f(0.52, 0.72), torso: rng.f(1.95, 2.3),
+               legs: rng.f(1.85, 2.2), waist: rng.f(0.8, 0.94), armW: rng.f(0.18, 0.23) }),
+      // slight: small all over, short limbs
+      () => ({ shW: rng.f(0.72, 0.92), hipW: rng.f(0.56, 0.76), torso: rng.f(1.55, 1.85),
+               legs: rng.f(1.35, 1.7), waist: rng.f(0.92, 1.06), armW: rng.f(0.13, 0.18) }),
+      // ordinary, so the sheet has a baseline
+      () => ({ shW: rng.f(0.92, 1.14), hipW: rng.f(0.66, 0.88), torso: rng.f(1.9, 2.25),
+               legs: rng.f(1.7, 2.05), waist: rng.f(0.94, 1.08), armW: rng.f(0.16, 0.21) }),
+    ];
+    return rng.pick(kinds)();
+  }
+
   function drawBody(c, rng, cx, neckY, s, lean, clothes) {
     const lx = lean * s * 0.26;
-    const shW = s * rng.f(0.86, 1.16);
-    const hipW = s * rng.f(0.6, 0.86);
-    const shY = neckY + s * rng.f(0.36, 0.5);
-    const hipY = neckY + s * rng.f(1.95, 2.3);
-    const kneeY = hipY + s * rng.f(0.85, 1.05);
-    const footY = hipY + s * rng.f(1.7, 2.05);
-    const aw0 = rng.f(0.17, 0.22);
+    const B = bodyKind(rng);
+    const shW = s * B.shW;
+    const hipW = s * B.hipW;
+    const shY = neckY + s * rng.f(0.32, 0.54);
+    const hipY = neckY + s * B.torso;
+    const kneeY = hipY + s * B.legs * rng.f(0.46, 0.56);
+    const footY = hipY + s * B.legs;
+    const aw0 = B.armW;
     const armR = (t) => s * (aw0 - (aw0 - 0.082) * Math.pow(t, 0.75)) * (0.94 + 0.12 * fbm2(t * 3.4, aw0 * 90, 991));
-    const legR = (t) => s * (rng.f(0.18, 0.23) - 0.065 * t);
+    const lw0 = B.armW * rng.f(1.02, 1.22);
+    const legR = (t) => s * (lw0 - lw0 * 0.34 * t);
     const pose = clothes.pose;
     const shrug = rng.f(-0.06, 0.1);
     // no two sides of a drawn person agree
@@ -1980,12 +2075,15 @@
       ];
     };
 
+    // stance: bowed, knock-kneed, wide, or planted
+    const stance = rng.f(-0.22, 0.26);
+    const spread = rng.f(0.78, 1.35);
     const leg = (side) => {
       const drop = footY + s * rng.f(-0.09, 0.09);
       return [
         P(side * hipW * rng.f(0.48, 0.62) * asym(side), hipY - s * 0.05),
-        P(side * (hipW * 0.5 + s * rng.f(-0.14, 0.1)), kneeY + s * rng.f(-0.1, 0.1)),
-        P(side * (hipW * 0.46 + s * rng.f(-0.16, 0.16)), drop),
+        P(side * (hipW * 0.5 * spread + s * (stance + rng.f(-0.08, 0.08))), kneeY + s * rng.f(-0.1, 0.1)),
+        P(side * (hipW * 0.46 * spread + s * (-stance * 1.6 + rng.f(-0.12, 0.12))), drop),
       ];
     };
 
@@ -2014,8 +2112,11 @@
     const neckR = P(s * rng.f(0.15, 0.21), neckY - s * 0.42);
     const shoulderL = P(-shW * asymL, shY + s * shrug * -1);
     const shoulderR = P(shW * asymR, shY + s * shrug + s * rng.f(-0.06, 0.06));
-    const waistL = P(-hipW * 1.02, shY + s * 1.25);
-    const waistR = P(hipW * 1.02, shY + s * 1.25);
+    // a belly, or a pinch, or neither — and it is not at the same height twice
+    const waistY = shY + (hipY - shY) * rng.f(0.42, 0.68);
+    const midW = (shW + hipW) * 0.5 * B.waist;
+    const waistL = P(-midW * rng.f(0.94, 1.06), waistY);
+    const waistR = P(midW * rng.f(0.94, 1.06), waistY + s * rng.f(-0.06, 0.06));
     const hipL = P(-hipW, hipY);
     const hipR = P(hipW, hipY);
     const crotch = P(rng.f(-4, 4), hipY + s * rng.f(0.1, 0.3));
@@ -2039,13 +2140,44 @@
       return out;
     };
 
+    const shoeKind = rng.pick(["wedge", "round", "boot", "square", "round"]);
     const footPts = (ankle, side) => {
-      const toe = side * s * rng.f(0.26, 0.4);
+      const toe = side * s * rng.f(0.24, 0.44);
+      const h = s * rng.f(0.09, 0.15);
+      if (shoeKind === "round") {
+        const pts = [];
+        for (let i = 0; i <= 9; i++) {
+          const a = -Math.PI * 0.5 + (i / 9) * Math.PI;
+          pts.push({
+            x: ankle.x + Math.sin(a) * toe * (a > 0 ? 1 : 0.5),
+            y: ankle.y - s * 0.02 + (1 - Math.cos(a)) * h * 0.6,
+          });
+        }
+        pts.push({ x: ankle.x - side * s * 0.15, y: ankle.y + h });
+        return pts;
+      }
+      if (shoeKind === "boot") {
+        return [
+          { x: ankle.x - side * s * 0.16, y: ankle.y - s * rng.f(0.12, 0.26) },
+          { x: ankle.x + side * s * 0.15, y: ankle.y - s * rng.f(0.1, 0.22) },
+          { x: ankle.x + toe * 0.8, y: ankle.y + s * 0.02 },
+          { x: ankle.x + toe * 0.72, y: ankle.y + h },
+          { x: ankle.x - side * s * 0.18, y: ankle.y + h },
+        ];
+      }
+      if (shoeKind === "square") {
+        return [
+          { x: ankle.x - side * s * 0.13, y: ankle.y - s * 0.02 },
+          { x: ankle.x + toe * 0.85, y: ankle.y - s * 0.03 },
+          { x: ankle.x + toe * 0.85, y: ankle.y + h },
+          { x: ankle.x - side * s * 0.15, y: ankle.y + h },
+        ];
+      }
       return [
         { x: ankle.x + side * s * 0.13, y: ankle.y - s * 0.02 },
         { x: ankle.x + toe, y: ankle.y + s * 0.04 },
-        { x: ankle.x + toe * 0.92, y: ankle.y + s * 0.11 },
-        { x: ankle.x - side * s * 0.14, y: ankle.y + s * 0.1 },
+        { x: ankle.x + toe * 0.92, y: ankle.y + h },
+        { x: ankle.x - side * s * 0.14, y: ankle.y + h * 0.9 },
       ];
     };
     const Lfoot = footPts(LlS[LlS.length - 1], -1);
@@ -2254,7 +2386,11 @@
           ], { w: heavy * 0.42, dry: 0.9, wobble: s * 0.03 });
         }
       } else if (clothes.pattern === "dark") {
-        // a black garment, so the bottom of the page carries weight too
+        // a black garment — the garment, not the whole figure. The core
+        // outline runs all the way to the shoes.
+        c.beginPath();
+        c.rect(cx - s * 4, shY - s * 0.9, s * 8, hemY - shY + s * 0.9);
+        c.clip();
         inkMassFill(c, rng, core, INK, { bite: s * 0.06 });
       }
       c.restore();
