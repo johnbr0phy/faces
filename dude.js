@@ -868,26 +868,47 @@
   // plates has one; a head floating alone on the paper does not read.
   function drawNeck(c, rng, skull) {
     const s = skull.s;
-    const chin = skull.limit(skull.project({ x: 0, y: 0.95, z: 0.35 }), 0);
-    const drop = s * rng.f(0.14, 0.3);
-    const halfW = s * rng.f(0.3, 0.46);
-    const l = { x: chin.x - halfW, y: chin.y - s * 0.04 };
-    const r = { x: chin.x + halfW * rng.f(0.85, 1.15), y: chin.y - s * 0.02 };
-    const lb = { x: l.x + rng.f(-3, 3), y: chin.y + drop };
-    const rb = { x: r.x + rng.f(-3, 3), y: chin.y + drop * rng.f(0.9, 1.1) };
-    inkPoly(c, rng, [l, lb], { w: s * 0.02, dry: 0.5 });
-    inkPoly(c, rng, [r, rb], { w: s * 0.02, dry: 0.5 });
-    if (rng.chance(0.6)) {
-      // the collar, or a bow tie, or a scribble that stands for one
+    const drop = s * rng.f(0.12, 0.34);
+    const lean = rng.f(-0.28, 0.28);
+    // both sides start ON the jaw, found by walking the outline, so the neck
+    // is never a pair of ticks floating clear of the chin
+    const onJaw = (ang) => {
+      const r = skull.radAt(ang);
+      return { x: skull.cx + Math.cos(ang) * r, y: skull.cy + Math.sin(ang) * r };
+    };
+    const aL = Math.PI / 2 + rng.f(0.34, 0.7);
+    const aR = Math.PI / 2 - rng.f(0.34, 0.7);
+    const l = onJaw(aL);
+    const r = onJaw(aR);
+    const lb = { x: l.x + drop * lean + rng.f(-3, 3), y: l.y + drop };
+    const rb = { x: r.x + drop * lean + rng.f(-3, 3), y: r.y + drop * rng.f(0.82, 1.18) };
+    inkPoly(c, rng, [l, lb], { w: s * rng.f(0.016, 0.026), dry: 0.5, wobble: s * 0.02 });
+    if (rng.chance(0.88)) {
+      inkPoly(c, rng, [r, rb], { w: s * rng.f(0.016, 0.026), dry: 0.5, wobble: s * 0.02 });
+    }
+    if (rng.chance(0.5)) {
       const mid = { x: (lb.x + rb.x) / 2, y: (lb.y + rb.y) / 2 };
-      inkPoly(c, rng, [{ x: lb.x - s * 0.12, y: lb.y - s * 0.02 }, { x: mid.x, y: mid.y + s * rng.f(0.04, 0.1) }, { x: rb.x + s * 0.12, y: rb.y - s * 0.02 }], { w: s * 0.019, dry: 0.6, wobble: s * 0.03 });
-      if (rng.chance(0.45)) {
+      const kind = rng.pick(["collar", "collar", "bow", "shoulders"]);
+      if (kind === "shoulders") {
         inkPoly(c, rng, [
-          { x: mid.x - s * 0.09, y: mid.y - s * 0.03 },
+          { x: lb.x - s * rng.f(0.2, 0.45), y: lb.y + s * rng.f(0.04, 0.12) },
+          { x: lb.x, y: lb.y },
+          { x: rb.x, y: rb.y },
+          { x: rb.x + s * rng.f(0.2, 0.45), y: rb.y + s * rng.f(0.04, 0.12) },
+        ], { w: s * 0.018, dry: 0.6, wobble: s * 0.03 });
+      } else if (kind === "bow") {
+        inkPoly(c, rng, [
+          { x: mid.x - s * rng.f(0.06, 0.12), y: mid.y - s * 0.03 },
           { x: mid.x, y: mid.y + s * 0.04 },
-          { x: mid.x + s * 0.09, y: mid.y - s * 0.03 },
+          { x: mid.x + s * rng.f(0.06, 0.12), y: mid.y - s * 0.03 },
           { x: mid.x, y: mid.y + s * 0.04 },
         ], { w: s * 0.017, dry: 0.7 });
+      } else {
+        inkPoly(c, rng, [
+          { x: lb.x - s * rng.f(0.06, 0.16), y: lb.y - s * 0.02 },
+          { x: mid.x, y: mid.y + s * rng.f(0.03, 0.1) },
+          { x: rb.x + s * rng.f(0.06, 0.16), y: rb.y - s * 0.02 },
+        ], { w: s * 0.019, dry: 0.6, wobble: s * 0.03 });
       }
     }
   }
@@ -1074,7 +1095,9 @@
     const part = rng.f(0.2, 0.8);
     const sweep = rng.f(-0.35, 0.35);
     for (let i = 0; i < lines; i++) {
-      const t = i / (lines - 1 || 1);
+      // clump: strokes gather and leave gaps instead of marching evenly
+      const base = i / (lines - 1 || 1);
+      const t = Math.max(0, Math.min(1, base + (fbm2(base * 6.4 + rng.seed * 0.01, 2.7, rng.seed + 5) - 0.5) * 0.18 + rng.f(-0.02, 0.02)));
       const f = front[Math.min(front.length - 1, Math.round(t * (front.length - 1)))];
       const g = top[Math.min(top.length - 1, Math.round((1 - t) * (top.length - 1)))];
       if (!f || !g) continue;
@@ -1510,6 +1533,16 @@
         inkPoly(c, rng, [wL, A(drop * 1.02, rng.f(-3, 3)), wR], { w: w * rng.f(0.6, 0.9), dry: 0.5 });
       }
       if (rng.chance(0.4)) inkCirc(c, rng, wR.x, wR.y, s * 0.02, w * 0.45, true);
+      return;
+    }
+
+    if (style === "blob") {
+      // no bridge at all: a lump and two nostrils
+      const t = A(drop * rng.f(0.7, 0.95), rng.f(-3, 3));
+      inkArc(c, rng, t.x, t.y, s * rng.f(0.09, 0.15), Math.PI + rng.f(0.1, 0.5), rng.f(-0.5, -0.1), w * 0.9);
+      inkCirc(c, rng, t.x - s * 0.06 * lean, t.y + s * 0.03, s * rng.f(0.018, 0.03), w * 0.5, true);
+      if (rng.chance(0.7)) inkCirc(c, rng, t.x + s * 0.07 * lean, t.y + s * 0.02, s * rng.f(0.015, 0.026), w * 0.45, true);
+      if (rng.chance(0.5)) inkPoly(c, rng, [A(0, rng.f(-3, 3)), A(drop * 0.45, rng.f(-4, 4))], { w: w * 0.5, dry: 0.9 });
       return;
     }
 
@@ -2361,7 +2394,7 @@
       "recede", "recede", "bald", "bald",
     ];
     const eyeStyles = ["open", "open", "open", "open", "dot", "dot", "slit", "angry", "x", "glasses", "glasses", "shades", "patch", "wink"];
-    const noseStyles = ["long", "long", "long", "long", "long", "hook", "hook", "hook", "hook", "tri", "button", "button"];
+    const noseStyles = ["long", "long", "long", "hook", "hook", "hook", "tri", "tri", "tri", "button", "button", "blob"];
     const mouthStyles = ["smile", "smile", "frown", "open", "open", "teeth", "smirk", "lips", "pucker", "line", "line"];
     const beardStyles = ["none", "none", "none", "stache", "goatee", "beard", "stubble"];
     const clothesKinds = ["tee", "hoodie", "jacket", "sweater"];
@@ -2458,13 +2491,18 @@
       nameX = cx + s * rng.f(-1.4, 0.5);
       nameY = Math.min(h - size * 1.5, body.footY + s * rng.f(0.3, 0.75));
     } else if (spot === "shoulder") {
-      nameX = cx + s * rng.f(1.2, 1.6);
+      nameX = cx + s * rng.f(1.5, 1.85);
       nameY = cy + s * rng.f(1.6, 2.4);
     } else {
-      nameX = cx + s * rng.f(1.15, 1.45);
-      nameY = cy + s * rng.f(0.05, 0.6);
+      nameX = cx + s * rng.f(1.2, 1.5);
+      nameY = cy + s * rng.f(0.0, 0.55);
     }
     const nameW = size * (String(dude.name).length * 0.92 + 0.6);
+    if (spot !== "feet" && nameX + nameW > w - 12) {
+      // no room in the margin, so it goes under the feet
+      nameX = Math.max(16, cx + s * rng.f(-1.4, 0.3));
+      nameY = Math.min(h - size * 1.5, body.footY + s * rng.f(0.3, 0.75));
+    }
     nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
     drawName(c, rng, dude.name, nameX, nameY, size);
@@ -2508,7 +2546,7 @@
         drawNose(c, rng, skull, d.nose, d.noseHeavy);
         drawMouth(c, rng, skull, d.mouth);
         drawFacialHair(c, rng, skull, d.beard);
-        if (rng.chance(0.62)) drawNeck(c, rng, skull);
+        if (rng.chance(0.5)) drawNeck(c, rng, skull);
       }
     }
     grainPass(c);
