@@ -790,6 +790,21 @@
     // Pull a point back inside the outline. Features that slide off the
     // silhouette on a hard turn are the single loudest tell that a face was
     // assembled rather than drawn.
+    // Cap how far outside the outline a point may sit. Hats are allowed to
+    // leave the skull; they are not allowed to swing across the face when the
+    // head turns, which is what a raw z=1.3 pin does under yaw.
+    capOut(p, mult) {
+      if (!this._rad) return p;
+      const dx = p.x - this.cx;
+      const dy = p.y - this.cy;
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-6) return p;
+      const max = this.radAt(Math.atan2(dy, dx)) * mult;
+      if (d <= max) return p;
+      const k = max / d;
+      return { x: this.cx + dx * k, y: this.cy + dy * k, z: p.z, front: p.front };
+    }
+
     limit(p, margin) {
       if (!this._rad) return p;
       const dx = p.x - this.cx;
@@ -832,8 +847,8 @@
     return skull.limit(skull.project(local), skull.s * 0.045);
   }
 
-  function pinOut(skull, local) {
-    return skull.project(local);
+  function pinOut(skull, local, mult) {
+    return skull.capOut(skull.project(local), mult ?? 1.3);
   }
 
   // ---------- head ----------
@@ -1427,7 +1442,7 @@
     }
 
     if (style === "beanie") {
-      const h = mk({ lineY: -0.36, bangs: 0.03, puff: 0.2, wob: 0.015 });
+      const h = mk({ lineY: -0.44, bangs: 0.03, puff: 0.2, wob: 0.015 });
       if (h) {
         inkMassFill(c, rng, h.mass, color, { bite: s * 0.028 });
         // knit ribbing runs with the dome, not straight down
@@ -1449,7 +1464,7 @@
     }
 
     if (style === "flat") {
-      const h = mk({ lineY: -0.4, bangs: 0.02, puff: 0.09, wob: 0.02 });
+      const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02 });
       if (h) {
         inkMass(c, rng, h, color, { strays: 0, rag: 1.1, edge: 3.2 });
         const bL = pinOut(skull, { x: -0.5, y: -0.3, z: 0.78 });
@@ -1464,7 +1479,7 @@
     }
 
     if (style === "baseball") {
-      const h = mk({ lineY: -0.36, puff: 0.15, wob: 0.015 });
+      const h = mk({ lineY: -0.44, puff: 0.15, wob: 0.015 });
       if (h) {
         inkFill(c, rng, h.mass, color, 0.34, s * 0.01);
         c.save();
