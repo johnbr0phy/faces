@@ -699,6 +699,10 @@
       this.pinch = shape.pinch ?? 0.3;
       this.skewW = shape.skewW ?? 0;
       this.brow = shape.brow ?? 0;
+      this.jawAngle = shape.jawAngle ?? 0;
+      this.jawHigh = shape.jawHigh ?? 0;
+      this.jawTaper = shape.jawTaper ?? 0.8;
+      this.chinX = shape.chinX ?? 0;
     }
 
     warp(local) {
@@ -805,6 +809,57 @@
         out.push({ x: this.cx + Math.cos(a) * r, y: this.cy + Math.sin(a) * r });
       }
       const rs = rr.map((_, i) => (rr[(i - 1 + NA) % NA] + rr[i] * 2.4 + rr[(i + 1) % NA]) / 4.4);
+
+      // A skull is not one convexity all the way round. It is a cranial ball
+      // with a jaw hung off it, and the jaw BREAKS the curve at two corners
+      // before running down to a chin. Without those breaks the outline is an
+      // egg and every feature floats on it, because there is no volume for
+      // them to sit on.
+      if (this.jawAngle > 0.02) {
+        const P3 = (x, y, z) => this.project({ x, y, z });
+        const cornerL = P3(-0.92 * this.jaw, 0.34 + this.jawHigh, 0.06);
+        const cornerR = P3(0.92 * this.jaw, 0.34 + this.jawHigh, 0.06);
+        const chinP = P3(this.chinX, 1.0 + this.chin, 0.3);
+        const midL = P3(-0.5 * this.jaw * this.jawTaper, 0.86 + this.chin * 0.6, 0.24);
+        const midR = P3(0.5 * this.jaw * this.jawTaper, 0.86 + this.chin * 0.6, 0.24);
+        const chain = [cornerL, midL, chinP, midR, cornerR];
+        const ang = (p) => Math.atan2(p.y - this.cy, p.x - this.cx);
+        // ray from the centre against each segment of the jaw chain
+        for (let i = 0; i < NA; i++) {
+          const a = -Math.PI + (i / NA) * Math.PI * 2;
+          if (Math.sin(a) <= 0) continue; // lower half of the head only
+          const dx = Math.cos(a);
+          const dy = Math.sin(a);
+          let hit = 0;
+          for (let k = 0; k + 1 < chain.length; k++) {
+            const p = chain[k];
+            const q = chain[k + 1];
+            const ex = q.x - p.x;
+            const ey = q.y - p.y;
+            const den = dx * ey - dy * ex;
+            if (Math.abs(den) < 1e-9) continue;
+            const px = p.x - this.cx;
+            const py = p.y - this.cy;
+            const t = (px * ey - py * ex) / den; // distance along the ray
+            const u = (px * dy - py * dx) / den; // position along the segment
+            if (t > 0 && u >= 0 && u <= 1 && t > hit) hit = t;
+          }
+          if (hit > 0) {
+            // how hard the jaw asserts itself over the smooth profile
+            const k = this.jawAngle * Math.min(1, Math.sin(a) * 1.6);
+            rs[i] = rs[i] * (1 - k) + hit * k;
+          }
+        }
+        // one light smoothing pass, so the corners stay corners but the runs
+        // between them do not shimmer
+        const sm = rs.slice();
+        for (let i = 0; i < NA; i++) {
+          const a = -Math.PI + (i / NA) * Math.PI * 2;
+          if (Math.sin(a) <= 0.1) continue;
+          rs[i] = (sm[(i - 1 + NA) % NA] + sm[i] * 4 + sm[(i + 1) % NA]) / 6;
+        }
+      }
+
       this._rad = rs;
       for (let i = 0; i < NA; i++) {
         const a = -Math.PI + (i / NA) * Math.PI * 2;
@@ -916,9 +971,9 @@
       inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.7, dry: 0.9 });
     }
 
-    const earL = pin(skull, { x: -0.92, y: 0.02, z: 0.05 });
-    const earR = pin(skull, { x: 0.92, y: 0.02, z: 0.05 });
-    const er = skull.s * rng.f(0.2, 0.32);
+    const earL = pin(skull, { x: -0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
+    const earR = pin(skull, { x: 0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
+    const er = skull.s * rng.f(0.14, 0.25);
     if (earL.z > -0.02) drawEar(c, rng, earL.x, earL.y, er * rng.f(0.85, 1.15), -1);
     if (earR.z > -0.02) drawEar(c, rng, earR.x, earR.y, er * rng.f(0.85, 1.15), 1);
     return hull;
@@ -1402,6 +1457,15 @@
       }
       // thick where it leaves the scalp, gone by the tip
       inkPoly(c, rng, path, { w: rng.f(1.9, 4.0) * k, taper: rng.f(0.08, 0.3), dry: 0.5, overshoot: false });
+    }
+    // Even stroke-laid hair needs a hairline. Without one the strokes read as
+    // a fringe radiating off the top contour rather than hair growing out of a
+    // scalp — and the hairline is what tells you the shape of the head.
+    if (opt.hairline !== false && front.length > 3) {
+      const a = rng.i(0, Math.max(0, front.length - 4));
+      const b = Math.min(front.length - 1, a + Math.round(front.length * rng.f(0.35, 0.8)));
+      const run = front.slice(a, b + 1);
+      if (run.length > 2) inkPoly(c, rng, run, { w: rng.f(1.2, 2.1) * k, dry: 1.2 });
     }
   }
 
@@ -2857,6 +2921,56 @@
   }
 
 
+  // A face is not a bag of independent traits. Pick ONE decision per head and
+  // let it distort everything else — that is the difference between forty
+  // people and one template sampled forty times.
+  function applyQuirk(d, rng) {
+    const q = rng.pick([
+      "none", "none",
+      "closeSet", "wideSet", "longFace", "browHeavy", "jawHeavy", "tiny", "topHeavy",
+    ]);
+    d.quirk = q;
+    if (q === "closeSet") {
+      d.eyeGap *= rng.f(0.5, 0.68);
+      d.noseHeavy *= rng.f(0.75, 0.9);
+      d.faceY += 0.04;
+      d.pinch = Math.min(0.6, d.pinch * 1.25);
+    } else if (q === "wideSet") {
+      d.eyeGap = Math.min(0.6, d.eyeGap * rng.f(1.3, 1.55));
+      d.noseHeavy *= rng.f(1.05, 1.25);
+      d.ratio *= rng.f(1.06, 1.16);
+      d.cheek *= 1.08;
+    } else if (q === "longFace") {
+      d.ratio *= rng.f(0.76, 0.88);
+      d.chin += rng.f(0.08, 0.18);
+      d.faceY -= rng.f(0.04, 0.1);
+      d.jawTaper *= 0.82;
+      d.noseHeavy *= rng.f(1.1, 1.3);
+    } else if (q === "browHeavy") {
+      d.brow = rng.f(0.1, 0.17);
+      d.brows = "angry";
+      d.eyes = rng.pick(["half", "squint", "half"]);
+      d.faceY += rng.f(0.03, 0.08);
+    } else if (q === "jawHeavy") {
+      d.jaw *= rng.f(1.15, 1.32);
+      d.jawAngle = rng.f(0.6, 0.85);
+      d.jawTaper = rng.f(0.85, 1.05);
+      d.wide = Math.min(0.6, d.wide + 0.25);
+      d.faceY -= 0.05;
+    } else if (q === "tiny") {
+      d.eyeGap *= 0.78;
+      d.noseHeavy *= 0.7;
+      d.faceY += rng.f(0.06, 0.13);
+      d.crown *= rng.f(1.08, 1.2);
+    } else if (q === "topHeavy") {
+      d.crown *= rng.f(1.12, 1.28);
+      d.faceY += rng.f(0.05, 0.12);
+      d.jaw *= 0.88;
+      d.chin -= 0.04;
+    }
+    return d;
+  }
+
   function makeDude(rng) {
     const hairStyles = [
       "buzz", "buzz", "bowl", "bowl",
@@ -2879,7 +2993,7 @@
     const hairColors = ["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"];
     const skins = [null];
 
-    return {
+    return applyQuirk({
       name: rng.chance(0.55) ? rng.pick(FIRST) : `${rng.pick(FIRST)} ${rng.pick(LAST)}`,
       yaw: rng.f(-0.75, 0.75),
       pitch: rng.f(-0.28, 0.28),
@@ -2910,12 +3024,16 @@
       lobeB: rng.pick([5, 6, 7, 8, 9]),
       lobeAmp: rng.f(0.03, 0.085),
       brow: rng.chance(0.42) ? rng.f(0.05, 0.13) : 0,
+      jawAngle: rng.chance(0.86) ? rng.f(0.26, 0.82) : 0,
+      jawHigh: rng.f(-0.16, 0.2),
+      jawTaper: rng.f(0.58, 1.05),
+      chinX: rng.f(-0.16, 0.16),
       lobePh: rng.f(0, Math.PI * 2),
       flat: rng.chance(0.55) ? rng.f(0.05, 0.14) : 0,
       flatA: rng.f(-Math.PI, Math.PI),
       pen: rng.f(0.9, 1.22),
       brows: rng.pick(["flat", "arch", "angry", "flat", "none", "arch"]),
-    };
+    }, rng);
   }
 
   function drawDude(c, rng, dude, w, h) {
@@ -2939,6 +3057,10 @@
       pinch: dude.pinch,
       skewW: dude.skewW,
       brow: dude.brow,
+      jawAngle: dude.jawAngle,
+      jawHigh: dude.jawHigh,
+      jawTaper: dude.jawTaper,
+      chinX: dude.chinX,
     });
     skull.pen = dude.pen;
     skull.faceY = dude.faceY;
@@ -3013,6 +3135,7 @@
           lobeA: d.lobeA, lobeB: d.lobeB, lobeAmp: d.lobeAmp, lobePh: d.lobePh,
           flat: d.flat, flatA: d.flatA,
           wide: d.wide, pinch: d.pinch, skewW: d.skewW, brow: d.brow,
+          jawAngle: d.jawAngle, jawHigh: d.jawHigh, jawTaper: d.jawTaper, chinX: d.chinX,
         });
         skull.pen = d.pen;
         skull.faceY = d.faceY;
