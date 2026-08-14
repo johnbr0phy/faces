@@ -364,7 +364,44 @@
     c.fill();
     c.restore();
 
-    const per = polyLen(pts.concat([pts[0]]));
+    // A mass a pen laid down has strokes in it. Filling a polygon and
+    // roughening the boundary leaves a smooth slab with a ragged edge, which
+    // is not the same thing at all.
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const q of pts) {
+      if (q.x < x0) x0 = q.x;
+      if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y;
+      if (q.y > y1) y1 = q.y;
+    }
+    const area = (x1 - x0) * (y1 - y0);
+    if (area > 900) {
+      c.save();
+      c.beginPath();
+      inset.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
+      c.closePath();
+      c.clip();
+      const ang = rng.f(0, Math.PI);
+      const dx = Math.cos(ang);
+      const dy = Math.sin(ang);
+      const span = Math.hypot(x1 - x0, y1 - y0);
+      const lines = Math.max(4, Math.round(span / (bite * rng.f(1.1, 2.2))));
+      for (let i = 0; i < lines; i++) {
+        const t = (i / (lines - 1 || 1) - 0.5) * span;
+        const mx = (x0 + x1) / 2 - dy * t;
+        const my = (y0 + y1) / 2 + dx * t;
+        const half = span * rng.f(0.3, 0.6);
+        nib(c, rng, [
+          { x: mx - dx * half, y: my - dy * half },
+          { x: mx + dx * half * rng.f(0.6, 1.0), y: my + dy * half * rng.f(0.6, 1.0) },
+        ], { w: bite * rng.f(0.5, 1.1), color, dry: 0.7, wobble: bite * 0.5, alpha: opt.alpha ?? 1 });
+      }
+      c.restore();
+    }
+
     const step = Math.max(1.6, bite * 0.55);
     const walk = resample(pts.concat([pts[0]]), step);
     for (let i = 0; i < walk.length; i++) {
