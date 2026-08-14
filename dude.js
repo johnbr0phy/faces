@@ -176,7 +176,8 @@
       while (ang < -Math.PI) ang += Math.PI * 2;
       const turn = Math.abs(ang);
       if (turn > 0.35) press *= 1 + Math.min(0.7, (turn - 0.35) * 1.1); // ink pools in the corner
-      W[i] = Math.max(0.3, w * Math.min(2.6, Math.max(0.2, press)));
+      if (opt.taper !== undefined) press *= 1 + (opt.taper - 1) * Math.pow(t01, opt.taperPow ?? 1.4);
+      W[i] = Math.max(0.26, w * Math.min(2.6, Math.max(0.08, press)));
       // the nib lifts rarely and briefly; a dashed line is a broken pen,
       // not a dry one. Thin strokes skip more than fat ones.
       const dry = fbm2(u * 0.19 + 11, sd * 0.02, sd + 137);
@@ -299,6 +300,7 @@
       const moved = sub.map((q, i) => ({ x: q.x + sn[i].x * off, y: q.y + sn[i].y * off }));
       nib(c, rng, moved, {
         w: w * rng.f(0.5, 0.78),
+        taper: opt.taper,
         color: opt.color,
         alpha: opt.alpha,
         dry: (opt.dry ?? 1) * 1.6,
@@ -316,6 +318,8 @@
     stroke(c, rng, pts, {
       closed: !!opt.closed,
       doubled: !!opt.doubled,
+      taper: opt.taper,
+      overshoot: opt.overshoot,
       w: opt.w ?? 1.8,
       passes: opt.passes ?? 1,
       dry: opt.dry,
@@ -1065,6 +1069,9 @@
     const k = h._s / 100;
     const lines = opt.lines ?? 30;
     const bow = opt.bow ?? 0.2;
+    // one parting, and everything sweeps away from it
+    const part = rng.f(0.2, 0.8);
+    const sweep = rng.f(-0.35, 0.35);
     for (let i = 0; i < lines; i++) {
       const t = i / (lines - 1 || 1);
       const f = front[Math.min(front.length - 1, Math.round(t * (front.length - 1)))];
@@ -1073,19 +1080,25 @@
       const dx = f.x - g.x;
       const dy = f.y - g.y;
       const d = Math.hypot(dx, dy) || 1;
-      const swing = bow * d * rng.f(-1, 1);
-      const stop = rng.f(0.72, 1.0); // not every hair reaches the hairline
+      const swing = (bow + sweep * (t - part)) * d * rng.f(0.5, 1.3);
+      const stop = rng.f(0.55, 1.05); // tips end at different depths
+      // start a little past the outer edge so the strokes break the silhouette
+      const out = rng.f(-1, 3.5) * k;
+      const ox = g.x - h._cx;
+      const oy = g.y - h._cy;
+      const ol = Math.hypot(ox, oy) || 1;
+      const g0 = { x: g.x + (ox / ol) * out, y: g.y + (oy / ol) * out };
       const path = [];
-      for (let j = 0; j <= 4; j++) {
-        const u = (j / 4) * stop;
+      for (let j = 0; j <= 5; j++) {
+        const u = (j / 5) * stop;
         path.push({
-          x: g.x + dx * u + (-dy / d) * swing * Math.sin(u * Math.PI),
-          y: g.y + dy * u + (dx / d) * swing * Math.sin(u * Math.PI),
+          x: g0.x + dx * u + (-dy / d) * swing * Math.sin(u * Math.PI),
+          y: g0.y + dy * u + (dx / d) * swing * Math.sin(u * Math.PI),
         });
       }
-      inkPoly(c, rng, path, { w: rng.f(0.8, 1.5) * k, dry: 0.7 });
+      // thick where it leaves the scalp, gone by the tip
+      inkPoly(c, rng, path, { w: rng.f(1.9, 4.0) * k, taper: rng.f(0.08, 0.3), dry: 0.5, overshoot: false });
     }
-    inkPoly(c, rng, top, { w: 1.4 * k, dry: 1.5 });
   }
 
   function shortTicks(c, rng, skull, lineY, count, len) {
@@ -1207,9 +1220,16 @@
       return;
     }
 
+    if (style === "thatch") {
+      // no black at all: hair as laid strokes over an open crown
+      const h = mk({ lineY: -0.46, recede: rng.f(-0.04, 0.14), sideBias: rng.f(-0.2, 0.2), puff: 0.05, wob: 0.05 });
+      if (h) combMass(c, rng, h, { lines: rng.i(30, 54), bow: rng.f(0.06, 0.3) });
+      return;
+    }
+
     if (style === "comb") {
       const h = mk({ lineY: -0.5, recede: 0.13, sideBias: rng.sign() * 0.14, puff: 0.065, wob: 0.04 });
-      if (h) combMass(c, rng, h, { lines: 34, bow: 0.26 });
+      if (h) combMass(c, rng, h, { lines: rng.i(30, 48), bow: rng.f(0.1, 0.34) });
       return;
     }
 
@@ -2331,12 +2351,13 @@
 
   function makeDude(rng) {
     const hairStyles = [
-      "buzz", "buzz", "bowl", "bowl", "bowl",
-      "spiky", "curly", "side", "side",
-      "comb", "comb", "comb",
+      "buzz", "buzz", "bowl", "bowl",
+      "spiky", "curly", "side",
+      "comb", "comb", "comb", "comb", "comb", "comb",
+      "thatch", "thatch", "thatch", "thatch",
       "beanie", "flat", "baseball",
-      "band", "messy", "messy",
-      "recede", "bald",
+      "band", "messy",
+      "recede", "recede", "bald", "bald",
     ];
     const eyeStyles = ["open", "open", "open", "open", "dot", "dot", "slit", "angry", "x", "glasses", "glasses", "shades", "patch", "wink"];
     const noseStyles = ["long", "long", "long", "long", "long", "hook", "hook", "hook", "hook", "tri", "button", "button"];
