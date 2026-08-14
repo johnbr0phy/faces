@@ -1,0 +1,111 @@
+:root {
+  --paper: #ebe3d2;
+  --ink: #1b1712;
+  --ink-soft: #3a342c;
+  --rule: #c9bba6;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.sheet {
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,0.28), transparent 55%),
+    var(--paper);
+}
+
+.mast {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 18px 22px 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
+.mast .mark { font-style: italic; }
+
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px 0;
+}
+
+#page {
+  width: min(92vw, 720px);
+  height: min(78dvh, 920px);
+  display: block;
+  touch-action: manipulation;
+}
+
+.dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 28px;
+}
+
+#another {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font: 28px/1 "Caveat", "Segoe Script", cursive;
+  padding: 4px 18px 10px;
+  cursor: pointer;
+  position: relative;
+}
+
+#another::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 4px;
+  height: 2px;
+  background: var(--ink);
+  opacity: 0.7;
+  transform: rotate(-0.6deg);
+}
+
+#another:hover { transform: rotate(-1.2deg); }
+#another:active { transform: translateY(1px) rotate(0.4deg); }
+#another:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a7f70;
+}
+
+@media (max-width: 640px) {
+  .mast { font-size: 12px; padding: 14px 14px 0; }
+  #another { font-size: 26px; }
+  #page { width: 96vw; height: min(74dvh, 820px); }
+}
