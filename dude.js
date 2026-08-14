@@ -1084,41 +1084,97 @@
 
 
   // ---------- head ----------
-  function drawHead(c, rng, skull, skinWash) {
-    const hull = skull.silhouette();
+  function headFill(c, rng, skull, hull, skinWash) {
     inkFill(c, rng, hull, PAPER, 1, 0.6);
     refibre(c, rng, hull);
     if (skinWash) inkFill(c, rng, hull, skinWash, 0.16, 0.6);
-    // A head is not one closed loop. It is a cranium drawn over, then a jaw
-    // drawn under, and they overshoot and cross where they meet — which is
-    // also where the pen bears down. One continuous perturbed circle is what
-    // makes a face read as a sticker instead of a skull.
+  }
+
+  // Which stretches of the outline are taken over by something in front of
+  // it. A nose that reaches past the silhouette IS the silhouette there, and
+  // the skull line has to stop — seeing the head's own edge continue behind a
+  // protruding nose is what makes a drawing read flat.
+  function outlineGaps(skull, hull, paths) {
     const n = hull.length;
+    const covered = new Array(n).fill(false);
+    // Only where the thing is GENUINELY past the outline, and only for the
+    // width it actually occupies. Gapping wherever a path merely reached the
+    // edge opened the head up like a broken egg.
+    const out = skull.s * 0.012;
+    let hits = 0;
+    for (const path of paths) {
+      if (!path) continue;
+      for (const p of path) {
+        const dx = p.x - skull.cx;
+        const dy = p.y - skull.cy;
+        const d = Math.hypot(dx, dy);
+        if (d < 1e-6) continue;
+        const a = Math.atan2(dy, dx);
+        if (d < skull.radAt(a) + out) continue;
+        const i = Math.round(((a + Math.PI) / (Math.PI * 2)) * n);
+        for (let k = -1; k <= 1; k++) {
+          const j = (((i + k) % n) + n) % n;
+          if (!covered[j]) hits++;
+          covered[j] = true;
+        }
+      }
+    }
+    // a nose and two ears cannot account for a third of a head
+    if (hits > n * 0.3) return new Array(n).fill(false);
+    return covered;
+  }
+
+  function headOutline(c, rng, skull, hull, covered) {
+    const n = hull.length;
+    const w0 = skull.s * 0.03 * (skull.pen || 1);
+    const ov = Math.round(n * rng.f(0.05, 0.11));
+    // A head is not one closed loop. It is a cranium drawn over and a jaw
+    // drawn under, which overshoot and cross where they meet.
     const arc = (a, b) => {
       const out = [];
-      for (let i = a; i <= b; i++) out.push(hull[((i % n) + n) % n]);
-      return out;
+      for (let i = a; i <= b; i++) {
+        const k = ((i % n) + n) % n;
+        if (covered && covered[k]) {
+          if (out.length > 1) {
+            const mid = out[Math.floor(out.length / 2)];
+            const low = mid.y > skull.cy;
+            inkPoly(c, rng, out.slice(), {
+              w: w0 * (low ? rng.f(1.2, 1.55) : rng.f(0.8, 0.95)),
+              dry: low ? 0.25 : 0.35,
+              doubled: rng.chance(0.24),
+            });
+          }
+          out.length = 0;
+          continue;
+        }
+        out.push(hull[k]);
+      }
+      if (out.length > 1) {
+        const mid = out[Math.floor(out.length / 2)];
+        const low = mid.y > skull.cy;
+        inkPoly(c, rng, out, {
+          w: w0 * (low ? rng.f(1.2, 1.55) : rng.f(0.8, 0.95)),
+          dry: low ? 0.25 : 0.35,
+          doubled: rng.chance(0.24),
+        });
+      }
     };
-    const ov = Math.round(n * rng.f(0.05, 0.11));
-    const w0 = skull.s * 0.03 * (skull.pen || 1);
-    const cranium = arc(-ov, Math.round(n * 0.5) + ov);
-    const jaw = arc(Math.round(n * 0.5) - ov, n + ov);
-    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.8, 0.95), dry: 0.35, doubled: rng.chance(0.22) });
-    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.2, 1.55), dry: 0.25, doubled: rng.chance(0.3) });
+    arc(-ov, Math.round(n * 0.5) + ov);
+    arc(Math.round(n * 0.5) - ov, n + ov);
     if (rng.chance(0.12)) {
-      // a cheek restated on one side only
       const a0 = Math.round(n * rng.f(0.02, 0.12));
-      inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.7, dry: 0.9 });
+      arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26)));
     }
+  }
 
+  function drawEars(c, rng, skull) {
     const earL = landmark(skull, { x: -0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
     const earR = landmark(skull, { x: 0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
     const er = skull.s * rng.f(0.14, 0.25);
-    // an ear sits on the limb of the head, so its normal barely faces us —
-    // it is visible while the surface has not turned right away
-    if (earL.nz > -0.3) drawEar(c, rng, earL, er * rng.f(0.85, 1.15), -1);
-    if (earR.nz > -0.3) drawEar(c, rng, earR, er * rng.f(0.85, 1.15), 1);
-    return hull;
+    const out = [];
+    if (earL.nz > -0.3) out.push(drawEar(c, rng, earL, er * rng.f(0.85, 1.15), -1));
+    if (earR.nz > -0.3) out.push(drawEar(c, rng, earR, er * rng.f(0.85, 1.15), 1));
+    return out;
   }
 
   // A little neck and collar under the chin. Every head on the reference
@@ -1187,6 +1243,7 @@
       const q1 = F(side * r * 0.35, r * 0.25);
       inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, r * 0.1);
     }
+    return pts;
   }
 
   function clamp(x, a, b) {
@@ -2096,15 +2153,29 @@
     ay = ty;
     const off = rng.f(-0.1, 0.03) * s * lean - s * rng.f(0.02, 0.09) * lean;
     const drop = faceLen * rng.f(0.34, 0.78);
+    const proj = rng.f(0.35, 0.95); // how far this particular nose sticks out
+    let outer = null;
+
+    // How far, and in which screen direction, this face's nose sticks OUT.
+    // Taken from the projection itself: the same point at z=0.72 and at
+    // z=1.3. Head-on that difference is almost nothing; in three-quarter view
+    // it is large and sideways, which is exactly when a nose should break the
+    // silhouette. A nose that never leaves the head is why ours read flat.
+    const q0 = skull.project({ x: 0, y: -0.02 + fy, z: 0.72 });
+    const q1 = skull.project({ x: 0, y: -0.02 + fy, z: 1.34 });
+    const outX = q1.x - q0.x;
+    const outY = q1.y - q0.y;
 
     const A = (t, lat) => {
       const px = -ay;
       const py = ax;
-      const p = {
-        x: browP.x + ax * t + px * (lat + off),
-        y: browP.y + ay * t + py * (lat + off),
+      // the protrusion ramps in from the brow and is full by the tip
+      const g = Math.max(0, Math.min(1, t / (drop || 1)));
+      const pr = Math.pow(g, 1.7) * proj;
+      return {
+        x: browP.x + ax * t + px * (lat + off) + outX * pr,
+        y: browP.y + ay * t + py * (lat + off) + outY * pr,
       };
-      return skull.limit(skull.deform(p), s * 0.16);
     };
 
     if (style === "tri") {
@@ -2118,7 +2189,7 @@
         inkPoly(c, rng, [wL, A(drop * 1.02, rng.f(-3, 3)), wR], { w: w * rng.f(0.6, 0.9), dry: 0.5 });
       }
       if (rng.chance(0.4)) inkCirc(c, rng, wR.x, wR.y, s * 0.02, w * 0.45, true);
-      return { ax, ay, browP, base: drop };
+      return { ax, ay, browP, base: drop , outer };
     }
 
     if (style === "blob") {
@@ -2128,14 +2199,14 @@
       inkCirc(c, rng, t.x - s * 0.06 * lean, t.y + s * 0.03, s * rng.f(0.018, 0.03), w * 0.5, true);
       if (rng.chance(0.7)) inkCirc(c, rng, t.x + s * 0.07 * lean, t.y + s * 0.02, s * rng.f(0.015, 0.026), w * 0.45, true);
       if (rng.chance(0.5)) inkPoly(c, rng, [A(0, rng.f(-3, 3)), A(drop * 0.45, rng.f(-4, 4))], { w: w * 0.5, dry: 0.9 });
-      return { ax, ay, browP, base: drop };
+      return { ax, ay, browP, base: drop , outer };
     }
 
     if (style === "button") {
       inkPoly(c, rng, [A(0, 0), A(drop * 0.55, rng.f(-2, 3))], { w: w * 0.75, dry: 0.6 });
       const t = A(drop, 0);
       inkCirc(c, rng, t.x, t.y, s * 0.085, w * 0.8);
-      return { ax, ay, browP, base: drop + s * 0.085 };
+      return { ax, ay, browP, base: drop + s * 0.085 , outer };
     }
 
     // The long one: brow to tip in one run, but it BREAKS direction once at
@@ -2159,6 +2230,7 @@
       run.push(A(drop + hookDrop * Math.sin(u * Math.PI * 0.9), bend + hookOut * lean * Math.sin(u * Math.PI * 0.62)));
     }
     inkPoly(c, rng, run, { w, passes: 2, dry: 0.25 });
+    outer = run;
 
     // the bottom has to have mass: the far wing, then a nostril
     if (rng.chance(0.5)) {
@@ -2172,7 +2244,7 @@
       const far = A(drop - s * 0.008, bend - s * 0.1 * lean);
       inkCirc(c, rng, far.x, far.y, s * rng.f(0.012, 0.022), w * 0.4, true);
     }
-    return { ax, ay, browP, base: drop + hookDrop };
+    return { ax, ay, browP, base: drop + hookDrop, outer };
   }
 
   function drawMouth(c, rng, skull, style, nose) {
@@ -3462,12 +3534,17 @@
     }
 
     const body = drawBody(c, R.body, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
-    const hull = drawHead(c, rng, skull, dude.skin);
+    const hull = skull.silhouette();
+    headFill(c, rng, skull, hull, dude.skin);
+    // the nose is laid down first, because where it passes outside the head
+    // it becomes the silhouette and the skull line has to give way to it
+    const nose = drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
+    const ears = drawEars(c, rng, skull);
+    headOutline(c, rng, skull, hull, outlineGaps(skull, hull, [nose && nose.outer].concat(ears)));
     const inFront = [];
     const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront);
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
-    const nose = drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
     // beard first: a filled mass drawn after the mouth swallows it
     drawFacialHair(c, rng, skull, dude.beard);
     drawMouth(c, rng, skull, dude.mouth, nose);
@@ -3683,12 +3760,15 @@
         skull.faceY = d.faceY;
         skull.gaze = d.gaze;
         skull.eyeGap = d.eyeGap;
-        const hull = drawHead(c, rng, skull, d.skin);
+        const hull = skull.silhouette();
+        headFill(c, rng, skull, hull, d.skin);
+        const nose = drawNose(c, rng, skull, d.nose, d.noseHeavy);
+        const ears = drawEars(c, rng, skull);
+        headOutline(c, rng, skull, hull, outlineGaps(skull, hull, [nose && nose.outer].concat(ears)));
         const inFront = [];
         const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront);
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
-        const nose = drawNose(c, rng, skull, d.nose, d.noseHeavy);
         drawFacialHair(c, rng, skull, d.beard);
         drawMouth(c, rng, skull, d.mouth, nose);
         inFront.forEach((f) => f());
