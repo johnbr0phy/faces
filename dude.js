@@ -2711,7 +2711,7 @@
       if (q.x > maxX) maxX = q.x;
       if (q.x < minX) minX = q.x;
     }
-    return { hipY, footY, maxX, minX };
+    return { hipY, footY, maxX, minX, core };
   }
 
   // ---------- handwritten name ----------
@@ -3144,6 +3144,7 @@
       noseHeavy: rng.f(1.15, 1.9) * (old ? rng.f(1.08, 1.25) : young ? rng.f(0.85, 0.98) : 1),
       mouth,
       beard,
+      colour: rng.chance(0.4) ? rng.pick(["head", "head", "head", "body", "body", "behind"]) : null,
       skin: null,
       clothes: {
         kind,
@@ -3217,6 +3218,24 @@
     drawMouth(c, rng, skull, dude.mouth, nose);
     drawFacialHair(c, rng, skull, dude.beard);
 
+    if (dude.colour) {
+      const targets = [];
+      if (dude.colour === "head") targets.push({ pts: hull });
+      if (dude.colour === "body" && body.core) targets.push({ pts: body.core });
+      if (dude.colour === "behind") {
+        const blob = [];
+        const rr = s * rng.f(1.15, 1.5);
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2;
+          const k = rr * (1 + (fbm2(i * 0.5, 3, rng.seed) - 0.5) * 0.3);
+          blob.push({ x: cx + Math.cos(a) * k, y: cy + Math.sin(a) * k * 1.08 });
+        }
+        targets.push({ pts: blob });
+      }
+      if (!targets.length) targets.push({ pts: hull });
+      colourPass(c, rng, s, targets);
+    }
+
     // The name goes where there is room, the way a hand writes it in the gap
     // it finds — not pinned at the same offset off the jaw every time.
     const size = rng.f(21, 32);
@@ -3250,6 +3269,53 @@
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
     drawName(c, rng, dude.name, nameX, nameY, size);
     grainPass(c);
+  }
+
+  // ---------- colour ----------
+  // Measured off the reference rather than guessed: 8.2% of the sheet carries
+  // colour, on 40% of the faces, at hue 30 (warm tan) for four fifths of it,
+  // with olive and a cold blue-grey behind, saturation 0.2 and value 0.6-0.8.
+  // It goes down as a flat patch that does NOT line up with the ink — the
+  // off-register is the whole character of it, like a second pass on a press.
+  const WASHES = [
+    "#ccb7a3", "#ccb7a3", "#ccb7a3", "#c4a88f", "#d8c4ae",
+    "#99897a", "#a8a882", "#cccca3", "#97a6b5", "#b59a86", "#c9a68f",
+  ];
+
+  function offRegister(pts, rng, k) {
+    const dx = rng.f(-1, 1) * k;
+    const dy = rng.f(-1, 1) * k;
+    const g = rng.f(0.74, 1.02); // his patches often fall short of the shape
+    let cx = 0;
+    let cy = 0;
+    for (const p of pts) {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= pts.length;
+    cy /= pts.length;
+    return pts.map((p) => ({ x: cx + (p.x - cx) * g + dx, y: cy + (p.y - cy) * g + dy }));
+  }
+
+  function colourPass(c, rng, s, targets) {
+    if (!targets.length) return;
+    const n = rng.chance(0.26) ? 2 : 1;
+    const used = [];
+    for (let i = 0; i < n; i++) {
+      const t = rng.pick(targets);
+      if (!t || !t.pts || t.pts.length < 3 || used.includes(t)) continue;
+      used.push(t);
+      c.save();
+      c.globalCompositeOperation = "multiply";
+      c.globalAlpha = rng.f(0.55, 0.92);
+      const pts = offRegister(t.pts, rng, s * rng.f(0.04, 0.13));
+      c.beginPath();
+      pts.forEach((p, j) => (j ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+      c.closePath();
+      c.fillStyle = t.color || rng.pick(WASHES);
+      c.fill();
+      c.restore();
+    }
   }
 
   // ---------- plate mode (?plate=1): a sheet of heads, for judging
@@ -3291,6 +3357,20 @@
         drawMouth(c, rng, skull, d.mouth, nose);
         drawFacialHair(c, rng, skull, d.beard);
         if (rng.chance(0.5)) drawNeck(c, rng, skull);
+        if (d.colour) {
+          if (d.colour === "behind") {
+            const blob = [];
+            const rr = s * rng.f(0.92, 1.2);
+            for (let i = 0; i < 14; i++) {
+              const a = (i / 14) * Math.PI * 2;
+              const k = rr * (1 + (fbm2(i * 0.5, 3, rng.seed) - 0.5) * 0.3);
+              blob.push({ x: cx + Math.cos(a) * k, y: cy + Math.sin(a) * k * 1.08 });
+            }
+            colourPass(c, rng, s, [{ pts: blob }]);
+          } else {
+            colourPass(c, rng, s, [{ pts: hull }]);
+          }
+        }
       }
     }
     grainPass(c);
