@@ -47,5 +47,41 @@
     <img src="progress/v2b.png" alt="Gus Moss, turned head" />
     <figcaption>v2 — Gus Moss. Same skull, different seed.</figcaption>
   </figure>
+
+  <h2>This run</h2>
+  <p>Six seeds against the Mannay plates. The critic scored five pieces (ink, hair/hats, head, body, name). <strong>Refs still won 5 / 5.</strong> No piece flipped. v2 / v2b stay on the page as the obsolete stick-figure baseline.</p>
+  <ul>
+    <li><strong>Ink</strong> — still short butt-capped fBm polylines on a flat cream (hash-noise <code>grainPass</code>, opaque polygon fills) rather than a dry nib that skips and pools inside real paper tooth. Cause: <code>dude.js</code> <code>inkLine</code> (~w butt segments, 0.32px fBm) plus <code>grainPass</code>.</li>
+    <li><strong>Hair / hats</strong> — still fail to wrap the 3D skull as dark filled masses that replace the crown silhouette. They read as empty scalps, temple stickers, toupees, or thimble-hats perched on the oval.</li>
+    <li><strong>Head</strong> — every seed is still the same 7%-jittered ellipsoid with traits stamped on, not a lumpy seed-specific oval owned by one heavy dry brow-to-tip nose.</li>
+    <li><strong>Body</strong> — every body is still the same trapezoid chassis with parallel-offset ribbon tubes for limbs, so it reads as a robot kit rather than a few naïve ink contours. <code>drawBody</code> builds a 10-point torso then <code>ribbon()</code> offsets a 3-point spine; <code>clothes.kind</code> only adds ticks.</li>
+    <li><strong>Name</strong> — jittered all-caps typeface (forced uppercase geometric glyphs, even tracking, same cheek-height stamp) rather than a dry-ink note. The leftover Georgia italic “another dude” button is typeset chrome that does not share that ink.</li>
+  </ul>
+
+  <p>Shots from this run:</p>
+  <figure class="shot">
+    <img src="progress/shots/s42.png" alt="Ulf Kane, seed 42" />
+    <figcaption><a href="progress/shots/s42.png">s42.png</a> — Ulf Kane. Regular egg, flat black trapezoid bowl with speckle holes, two identical dots. Hexagon torso + belly oval.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="progress/shots/s1107.png" alt="Otto, seed 1107" />
+    <figcaption><a href="progress/shots/s1107.png">s1107.png</a> — Otto. Yaws, but equal un-foreshortened dots and a diagonal nose walking the cheek; hair is two parallelogram stickers. Hexagon torso, tube legs. OTTO as twin T’s on the mouth.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="progress/shots/s777.png" alt="Gus Moss, seed 777" />
+    <figcaption><a href="progress/shots/s777.png">s777.png</a> — Gus Moss. Even-parallel hat hatch on a small cylinder with a bald ring around it. Closed triangle nose. Green trapezoid, hands-on-hips diamond arms. GUS MOSS in even display caps.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="progress/shots/s2026.png" alt="Mo, seed 2026" />
+    <figcaption><a href="progress/shots/s2026.png">s2026.png</a> — Mo. Smooth egg, toupee patch that stops inside the oval, even circle glasses. Same green trapezoid chassis on dead cream grain.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="progress/shots/s4929.png" alt="Walt, seed 4929" />
+    <figcaption><a href="progress/shots/s4929.png">s4929.png</a> — Walt. Thin band on a bald crown, stamped closed-triangle nose, same green trapezoid + diamond arms.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="progress/shots/s88.png" alt="Jules Nash, seed 88" />
+    <figcaption><a href="progress/shots/s88.png">s88.png</a> — Jules Nash. Only pointed chin in the set; still a thin polyline nose under a dusty toupee cap. Hexagon torso. JULES NASH has the only lively underline, letters still on a ruler.</figcaption>
+  </figure>
 </body>
 </html>
