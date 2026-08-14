@@ -93,6 +93,189 @@
     return rgbHex(pr * k, pg * k, pb * k);
   }
 
+  // ---------- motion ----------
+  // The dude is already a 2D drawing of a 3D thing: the head is a skull with a
+  // yaw, a pitch and a roll, and the body is a stick rig — two three-point arm
+  // chains and two three-point leg chains — that the silhouette is grown
+  // around. Nothing about either is static. So animating him is not a matter
+  // of tweening pictures; it is a matter of moving the rig and drawing him
+  // again, which is what a flipbook is.
+  //
+  // Every offset below is in units of the body's own s, and is ADDED to the
+  // joint the person already had. His stance, his asymmetry, the swing his
+  // arms hang at — all of that survives, and the motion rides on top of it.
+  // A walk that replaced the pose outright would make everyone walk the same.
+  const REST = {
+    on: false,
+    yaw: 0, pitch: 0, roll: 0, // added to the skull's own
+    bob: 0, sway: 0, lean: 0, // whole figure
+    sh: 0, // shoulders, for a shrug
+    arm: [{ ex: 0, ey: 0, hx: 0, hy: 0 }, { ex: 0, ey: 0, hx: 0, hy: 0 }], // [left, right]
+    leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+  };
+  let MOTION = REST;
+
+  // The line itself crawls between frames. Hand-drawn animation boils because
+  // the second drawing is a second drawing, not the first one moved — and a
+  // rig that holds perfectly still between poses is the one thing that gives
+  // away that a computer is doing the inbetweens. This shifts the noise field
+  // the nib wanders through, so the ink is redrawn rather than replayed, while
+  // every structural decision about the dude stays exactly where it was.
+  let BOIL = 0;
+
+  const TAU = Math.PI * 2;
+
+  // Ease that sits at rest and snaps — a body accelerating out of a pose.
+  function swing(x) {
+    return Math.sin(x * TAU);
+  }
+  // Positive half only: a limb that lifts and comes back down but never
+  // travels through the floor.
+  function lift(x) {
+    return Math.max(0, Math.sin(x * TAU));
+  }
+
+  const MOTIONS = {
+    // Marching towards you. Seen from the front a walk is not a side-on
+    // scissor — it is knees coming up alternately, the foot foreshortening as
+    // it swings at you, arms counter-swinging, and the whole body rising twice
+    // per cycle on the ball of each foot. Drawn front-on, a scissor reads as
+    // the splits.
+    walk: (t) => {
+      const a = lift(t);
+      const b = lift(t + 0.5);
+      return {
+        yaw: swing(t) * 0.1,
+        roll: swing(t + 0.25) * 0.05,
+        pitch: -Math.abs(swing(t * 2)) * 0.04,
+        bob: -Math.abs(swing(t * 2)) * 0.07,
+        sway: swing(t) * 0.05,
+        lean: swing(t) * 0.08,
+        arm: [
+          { ex: -swing(t) * 0.1, ey: 0, hx: -swing(t) * 0.26, hy: -Math.abs(swing(t)) * 0.1 },
+          { ex: swing(t) * 0.1, ey: 0, hx: swing(t) * 0.26, hy: -Math.abs(swing(t)) * 0.1 },
+        ],
+        leg: [
+          { kx: -a * 0.1, ky: -a * 0.3, fx: -a * 0.16, fy: -a * 0.62 },
+          { kx: b * 0.1, ky: -b * 0.3, fx: b * 0.16, fy: -b * 0.62 },
+        ],
+      };
+    },
+
+    // One arm up, forearm swinging from the elbow, the way a person actually
+    // waves — the upper arm parks and only the hand moves. The head cocks
+    // towards the raised side, because a wave is aimed at someone.
+    wave: (t) => {
+      const f = Math.sin(t * TAU * 2); // two waves a cycle
+      return {
+        yaw: 0.14 + f * 0.05,
+        roll: -0.1,
+        pitch: -0.04,
+        bob: -Math.abs(f) * 0.02,
+        sway: 0.02,
+        arm: [
+          { ex: 0, ey: 0, hx: -0.04, hy: 0.02 },
+          { ex: 0.46, ey: -1.24, hx: 0.62 + f * 0.34, hy: -3.05 + Math.abs(f) * 0.16 },
+        ],
+        leg: [
+          { kx: 0, ky: 0, fx: 0, fy: 0 },
+          { kx: 0, ky: 0, fx: 0, fy: 0 },
+        ],
+      };
+    },
+
+    // Anticipate, leave the ground, hang, land. The squash on the way in and
+    // out is in the bob and the knees; without it he floats.
+    jump: (t) => {
+      // crouch through the first fifth, air through the middle, land and settle
+      const air = Math.max(0, Math.sin(Math.max(0, t - 0.18) / 0.62 * Math.PI));
+      const crouch = t < 0.18 ? Math.sin((t / 0.18) * Math.PI) : t > 0.8 ? Math.sin(((t - 0.8) / 0.2) * Math.PI) : 0;
+      const up = air * 1.15;
+      return {
+        pitch: -up * 0.14 + crouch * 0.1,
+        roll: 0,
+        yaw: 0,
+        bob: -up * 1.0 + crouch * 0.16,
+        sway: 0,
+        arm: [
+          { ex: -0.24 * up, ey: -0.7 * up, hx: -0.4 * up, hy: -1.95 * up + crouch * 0.3 },
+          { ex: 0.24 * up, ey: -0.7 * up, hx: 0.4 * up, hy: -1.95 * up + crouch * 0.3 },
+        ],
+        leg: [
+          { kx: -0.06 * up, ky: -0.16 * up + crouch * 0.12, fx: -0.1 * up, fy: -0.34 * up + crouch * 0.2 },
+          { kx: 0.06 * up, ky: -0.16 * up + crouch * 0.12, fx: 0.1 * up, fy: -0.34 * up + crouch * 0.2 },
+        ],
+      };
+    },
+
+    // Nothing but the skull. This is the one that shows what the thing
+    // actually is: the eyes, the nose, the ears, the hair and the hat are
+    // pinned to a head that is turning in space, not sliding across an oval.
+    look: (t) => ({
+      yaw: Math.sin(t * TAU) * 0.62,
+      pitch: Math.sin(t * TAU * 2 + 1) * 0.13,
+      roll: Math.sin(t * TAU + 2) * 0.07,
+      bob: -Math.abs(Math.sin(t * TAU)) * 0.02,
+      sway: Math.sin(t * TAU) * 0.03,
+      arm: [{ ex: 0, ey: 0, hx: 0, hy: 0 }, { ex: 0, ey: 0, hx: 0, hy: 0 }],
+      leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+    }),
+
+    // Weight over one hip, then the other, arms up, head rolling against the
+    // hips. Off-beat by a quarter so the head arrives after the body.
+    dance: (t) => {
+      const s1 = swing(t);
+      const s2 = swing(t * 2);
+      return {
+        yaw: s1 * 0.24,
+        roll: -s1 * 0.16,
+        pitch: -Math.abs(s2) * 0.06,
+        bob: -Math.abs(s2) * 0.1,
+        sway: s1 * 0.18,
+        lean: s1 * 0.22,
+        arm: [
+          { ex: -0.3 + s1 * 0.1, ey: -0.5 - lift(t) * 0.4, hx: -0.5 + s1 * 0.2, hy: -1.5 - lift(t) * 0.5 },
+          { ex: 0.3 + s1 * 0.1, ey: -0.5 - lift(t + 0.5) * 0.4, hx: 0.5 + s1 * 0.2, hy: -1.5 - lift(t + 0.5) * 0.5 },
+        ],
+        leg: [
+          { kx: -s1 * 0.08, ky: -lift(t) * 0.14, fx: -s1 * 0.06, fy: -lift(t) * 0.24 },
+          { kx: -s1 * 0.08, ky: -lift(t + 0.5) * 0.14, fx: -s1 * 0.06, fy: -lift(t + 0.5) * 0.24 },
+        ],
+      };
+    },
+
+    // Shoulders up, head down into them, hands turned out. Held at the top,
+    // because a shrug is a pose with a pause in it, not an oscillation.
+    shrug: (t) => {
+      const k = t < 0.25 ? t / 0.25 : t < 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 0.3);
+      const e = k * k * (3 - 2 * k);
+      return {
+        yaw: 0,
+        pitch: e * 0.16,
+        roll: Math.sin(t * TAU) * 0.04,
+        bob: e * 0.1,
+        sway: 0,
+        sh: -e * 0.24,
+        arm: [
+          { ex: -e * 0.22, ey: -e * 0.24, hx: -e * 0.42, hy: -e * 0.36 },
+          { ex: e * 0.22, ey: -e * 0.24, hx: e * 0.42, hy: -e * 0.36 },
+        ],
+        leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+      };
+    },
+  };
+
+  const MOTION_NAMES = Object.keys(MOTIONS);
+
+  // How long one cycle takes, in seconds. A walk is quick, a shrug is slow.
+  const MOTION_PERIOD = { walk: 1.05, wave: 1.6, jump: 1.5, look: 4.2, dance: 1.5, shrug: 2.6 };
+
+  function motionAt(kind, t) {
+    const f = MOTIONS[kind];
+    if (!f) return REST;
+    return { ...REST, ...f(((t % 1) + 1) % 1), on: true };
+  }
+
   // ---------- seeded rng ----------
   function mulberry32(a) {
     return function () {
@@ -244,8 +427,8 @@
     for (let i = 0; i < n; i++) {
       const u = (i / (n - 1)) * L;
       const wob =
-        (fbm2(u * 0.019, sd * 0.013, sd) - 0.5) * 2 * amp +
-        (fbm2(u * 0.105, sd * 0.007, sd + 31) - 0.5) * 2 * amp * 0.3;
+        (fbm2(u * 0.019, sd * 0.013 + BOIL, sd) - 0.5) * 2 * amp +
+        (fbm2(u * 0.105, sd * 0.007 + BOIL * 1.7, sd + 31) - 0.5) * 2 * amp * 0.3;
       P[i] = { x: S[i].x + N0[i].x * wob, y: S[i].y + N0[i].y * wob };
     }
     const NN = normals(P);
@@ -263,8 +446,8 @@
       // which is the thing every critic spots first.
       const t01 = i / (n - 1);
       const cyc = 1.3 + ((sd >>> 3) % 9) * 0.42;
-      const slow = fbm2(t01 * cyc * 2 + 7, sd * 0.011, sd + 5) - 0.5;
-      const slow2 = fbm2(t01 * cyc * 5.5 + 3, sd * 0.017, sd + 211) - 0.5;
+      const slow = fbm2(t01 * cyc * 2 + 7, sd * 0.011 + BOIL * 0.6, sd + 5) - 0.5;
+      const slow2 = fbm2(t01 * cyc * 5.5 + 3, sd * 0.017 + BOIL * 0.9, sd + 211) - 0.5;
       const fast = fbm2(u * 0.185, sd * 0.005, sd + 61) - 0.5;
       // How much the width breathes is the pen's, not the line's. A fineliner
       // holds one width from start to stop; a wet nib swells through every
@@ -2920,7 +3103,7 @@
   }
 
   function drawBody(c, rng, cx, neckY, s, lean, clothes, person) {
-    const lx = lean * s * 0.26;
+    const lx = (lean + MOTION.lean) * s * 0.26;
     const B = bodyKind(rng, person);
     const shW = s * B.shW;
     const hipW = s * B.hipW;
@@ -2944,23 +3127,46 @@
     const tilt = rng.f(-0.1, 0.1);
     const ct = Math.cos(tilt);
     const st = Math.sin(tilt);
+    // A body in motion does not travel as one block. The torso rises and
+    // sways while the feet stay where they were put — so the displacement is
+    // full strength from the hips up and fades to nothing at the floor, which
+    // is what makes the knees take the bob instead of the shoes sliding about.
+    // A jump is the exception: there the ground lets go, and MOTION.ground
+    // carries the feet up with everything else.
+    const groundK = 1 - (MOTION.ground ?? 1);
+    const planted = (y) => {
+      if (!MOTION.on) return 0;
+      const k = Math.max(0, Math.min(1, (y - hipY) / Math.max(1e-6, footY - hipY)));
+      return 1 - k * (1 - groundK);
+    };
     const P = (x, y) => {
       const dy = y - neckY;
       const dx = x + (lx * dy) / (s * 2);
-      return { x: cx + dx * ct - dy * st, y: neckY + dx * st + dy * ct };
+      const g = planted(y);
+      return {
+        x: cx + dx * ct - dy * st + MOTION.sway * s * g,
+        y: neckY + dx * st + dy * ct + MOTION.bob * s * g,
+      };
     };
+
+    // Move a joint the rig already worked out. Offsets are added, never
+    // substituted, so the swing his arms happen to hang at is still his.
+    const J = (p, dx, dy) => (MOTION.on ? { x: p.x + dx * s, y: p.y + dy * s } : p);
 
     // ---- skeleton lines the outline is grown around ----
     const arm = (side) => {
-      const sh = P(side * shW * 0.82, shY + s * shrug * side);
+      const m = MOTION.arm[side < 0 ? 0 : 1];
+      const sh = P(side * shW * 0.82, shY + s * (shrug * side + MOTION.sh));
+      const E = (p) => J(p, m.ex, m.ey);
+      const H = (p) => J(p, m.hx, m.hy);
       if (pose === "pockets") {
-        return [sh, P(side * (shW + s * 0.16), shY + s * 0.78), P(side * (hipW + s * 0.1), hipY - s * 0.16)];
+        return [sh, E(P(side * (shW + s * 0.16), shY + s * 0.78)), H(P(side * (hipW + s * 0.1), hipY - s * 0.16))];
       }
       if (pose === "hips") {
-        return [sh, P(side * (shW + s * 0.42), shY + s * 0.74), P(side * (hipW + s * 0.06), hipY - s * 0.08)];
+        return [sh, E(P(side * (shW + s * 0.42), shY + s * 0.74)), H(P(side * (hipW + s * 0.06), hipY - s * 0.08))];
       }
       if (pose === "folded") {
-        return [sh, P(side * (shW + s * 0.14), shY + s * 0.62), P(-side * s * 0.16, shY + s * 0.95)];
+        return [sh, E(P(side * (shW + s * 0.14), shY + s * 0.62)), H(P(-side * s * 0.16, shY + s * 0.95))];
       }
       // hanging
       // the hang is not vertical on everyone: some swing out, some tuck in
@@ -2968,8 +3174,8 @@
       const swing = rng.f(-0.16, 0.24);
       return [
         sh,
-        P(side * (shW + s * (rng.f(0.02, 0.13) + swing * 0.4)) * a, shY + s * rng.f(0.66, 0.96) * a),
-        P(side * (shW + s * (rng.f(-0.02, 0.2) + swing)) * a, shY + s * rng.f(1.42, 1.86) * a),
+        E(P(side * (shW + s * (rng.f(0.02, 0.13) + swing * 0.4)) * a, shY + s * rng.f(0.66, 0.96) * a)),
+        H(P(side * (shW + s * (rng.f(-0.02, 0.2) + swing)) * a, shY + s * rng.f(1.42, 1.86) * a)),
       ];
     };
 
@@ -2978,10 +3184,11 @@
     const spread = rng.f(0.78, 1.35);
     const leg = (side) => {
       const drop = footY + s * rng.f(-0.09, 0.09);
+      const m = MOTION.leg[side < 0 ? 0 : 1];
       return [
         P(side * hipW * rng.f(0.48, 0.62) * asym(side), hipY - s * 0.05),
-        P(side * (hipW * 0.5 * spread + s * (stance + rng.f(-0.08, 0.08))), kneeY + s * rng.f(-0.1, 0.1)),
-        P(side * (hipW * 0.46 * spread + s * (-stance * 1.6 + rng.f(-0.12, 0.12))), drop),
+        J(P(side * (hipW * 0.5 * spread + s * (stance + rng.f(-0.08, 0.08))), kneeY + s * rng.f(-0.1, 0.1)), m.kx, m.ky),
+        J(P(side * (hipW * 0.46 * spread + s * (-stance * 1.6 + rng.f(-0.12, 0.12))), drop), m.fx, m.fy),
       ];
     };
 
@@ -3008,8 +3215,8 @@
     // ---- one continuous silhouette ----
     const neckL = P(-s * rng.f(0.15, 0.21), neckY - s * 0.42);
     const neckR = P(s * rng.f(0.15, 0.21), neckY - s * 0.42);
-    const shoulderL = P(-shW * asymL, shY + s * (slope - shrug));
-    const shoulderR = P(shW * asymR, shY + s * (slope + shrug) + s * rng.f(-0.06, 0.06));
+    const shoulderL = P(-shW * asymL, shY + s * (slope - shrug + MOTION.sh));
+    const shoulderR = P(shW * asymR, shY + s * (slope + shrug + MOTION.sh) + s * rng.f(-0.06, 0.06));
     // a belly, or a pinch, or neither — and it is not at the same height twice
     const waistY = shY + (hipY - shY) * rng.f(0.42, 0.68);
     const midW = (shW + hipW) * 0.5 * B.waist;
@@ -4178,7 +4385,19 @@
     const rng = R.mark;
     setPen(dude.penKind);
 
-    const skull = new Skull(cx, cy, s, dude.yaw, dude.pitch, dude.roll, dude.ratio, dude.depth, {
+    // The head rides the torso, so it takes the whole bob and sway — the body
+    // fades its displacement out towards the floor, the head never does. And
+    // the pose deltas go into the skull itself rather than onto the finished
+    // drawing, which is the entire point of there being a skull: the ears, the
+    // hair, the hat and the far eye turn with it instead of sliding across it.
+    const bodyS = s * 0.9;
+    const hx = cx + MOTION.sway * bodyS;
+    const hy = cy + MOTION.bob * bodyS;
+    const yaw = Math.max(-0.95, Math.min(0.95, dude.yaw + MOTION.yaw));
+    const pitch = Math.max(-0.6, Math.min(0.6, dude.pitch + MOTION.pitch));
+    const roll = dude.roll + MOTION.roll;
+
+    const skull = new Skull(hx, hy, s, yaw, pitch, roll, dude.ratio, dude.depth, {
       jaw: dude.jaw,
       chin: dude.chin,
       crown: dude.crown,
@@ -4216,7 +4435,7 @@
       colourPass(c, R.colour, s, [{ pts: blob }]);
     }
 
-    const body = drawBody(c, R.body, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
+    const body = drawBody(c, R.body, cx, cy + s * 1.18, bodyS, dude.lean + yaw * 0.25, dude.clothes, dude.person);
     const hull = skull.silhouette();
     const prof = noseProfile(skull, dude);
     // His commonest nose is the contour itself, so bend the hull before it is
@@ -4361,8 +4580,8 @@
   let measCv = null;
   const extentCache = new Map();
 
-  function figureExtent(seed, dude) {
-    const key = seed >>> 0;
+  function figureExtent(seed, dude, tag) {
+    const key = `${seed >>> 0}:${tag || ""}`;
     const hit = extentCache.get(key);
     if (hit) return hit;
     // generous enough that nothing can run off the edge of the measuring
@@ -4420,6 +4639,28 @@
     }
     if (extentCache.size > 48) extentCache.clear();
     extentCache.set(key, ext);
+    return ext;
+  }
+
+  // A moving dude needs room for the tallest thing he does, not for the pose
+  // he happens to be in when the page loads. So he is measured at several
+  // points around his cycle and given the union — otherwise the frame he
+  // waves in is the frame his hand goes off the top of the sheet.
+  function motionExtent(seed, dude, kind) {
+    const was = MOTION;
+    const ext = { up: 0, down: 0, left: 0, right: 0 };
+    try {
+      for (let i = 0; i < 6; i++) {
+        MOTION = motionAt(kind, i / 6);
+        const e = figureExtent(seed, dude, `${kind}${i}`);
+        ext.up = Math.max(ext.up, e.up);
+        ext.down = Math.max(ext.down, e.down);
+        ext.left = Math.max(ext.left, e.left);
+        ext.right = Math.max(ext.right, e.right);
+      }
+    } finally {
+      MOTION = was;
+    }
     return ext;
   }
 
@@ -4712,9 +4953,117 @@
     grainPass(c, c.__dpr);
   }
 
+  // ---------- moving pictures (?anim=1) ----------
+  //
+  // A flipbook, not a film. The sheet — paper, grain, the name, the words at
+  // the foot of the page — is drawn once into a bitmap, because none of it
+  // moves and the grain pass alone costs three times what the whole figure
+  // does. Every frame is then that bitmap blitted, and the dude drawn over it
+  // from scratch: same seed, same decisions, same person, different pose.
+  //
+  // Drawn from scratch is the important part. He is not a picture being
+  // transformed. The rig moves and the pen goes over him again, so the line
+  // boils the way a line does when a hand draws it twice, and the head turns
+  // in space rather than skewing on the page.
+  function makeAnimation(canvasEl, seed, dude, w, h, dpr, kind) {
+    const foot = footerLayout(w, h);
+    const ext = motionExtent(seed, dude, kind);
+    const place = rngFor(seed, "place");
+
+    const mx = Math.max(12, Math.min(w * 0.05, 40));
+    const top = Math.max(10, Math.min(h * 0.035, 34));
+    const availH = Math.max(80, foot.top - top);
+    const availW = Math.max(80, w - mx * 2);
+    const nameRoom = CANON * 0.62;
+    const rel = 0.88 + 0.12 * Math.max(0, Math.min(1, (dude.size - 98) / 28));
+    const k = Math.min(availH / (ext.up + ext.down + nameRoom), availW / (ext.left + ext.right), 1.5) * rel;
+    const s = CANON * k;
+    const cx = Math.max(mx + ext.left * k, Math.min(w - mx - ext.right * k, w * 0.5));
+    const cy = top + ext.up * k + Math.max(0, availH - (ext.up + ext.down + nameRoom) * k) * 0.5;
+
+    // the strip of sheet the figure can reach, so only that gets repainted
+    const pad = 6;
+    const box = {
+      x: Math.max(0, Math.floor(cx - ext.left * k - pad)),
+      y: Math.max(0, Math.floor(cy - ext.up * k - pad)),
+      w: 0,
+      h: 0,
+    };
+    box.w = Math.min(w, Math.ceil(cx + ext.right * k + pad)) - box.x;
+    box.h = Math.min(h, Math.ceil(cy + ext.down * k + pad)) - box.y;
+
+    // ---- the sheet, once ----
+    const bd = document.createElement("canvas");
+    bd.width = Math.round(w * dpr);
+    bd.height = Math.round(h * dpr);
+    const bc = bd.getContext("2d", { willReadFrequently: true });
+    bc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    bc.__dpr = dpr;
+    paper(bc, w, h, rngFor(seed, "paper"));
+    setPen(dude.penKind);
+    const nameSize = Math.min(s * place.f(0.19, 0.26), (w - mx * 2) / (String(dude.name).length * 0.95 + 0.8));
+    const nameW = nameSize * (String(dude.name).length * 0.95 + 0.8);
+    const nameX = Math.max(mx, Math.min(w - nameW - mx, cx - nameW * 0.5 + place.f(-s * 0.3, s * 0.3)));
+    const nameY = Math.min(foot.top - nameSize * 1.95, cy + ext.down * k + s * place.f(0.16, 0.4));
+    drawName(bc, rngFor(seed, "name"), dude.name, nameX, nameY, nameSize);
+    setPen("nib");
+    const hits = drawFooter(bc, seed, w, foot);
+    grainPass(bc, dpr);
+
+    const c = canvasEl.getContext("2d");
+    let last = -1;
+
+    return {
+      hits,
+      // t is the phase of the cycle, 0..1. frameNo only drives the boil, so
+      // holding on a phase still redraws rather than freezing.
+      draw(t, frameNo) {
+        if (frameNo === last) return;
+        last = frameNo;
+        MOTION = motionAt(kind, t);
+        BOIL = frameNo * 0.41;
+        const R = {
+          mark: rngFor(seed, "mark"),
+          body: rngFor(seed, "body"),
+          colour: rngFor(seed, "colour"),
+        };
+        c.save();
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Only the band he can reach is repainted. Blitting the whole sheet
+        // every frame is most of the cost of a frame on a big window.
+        c.drawImage(bd, box.x * dpr, box.y * dpr, box.w * dpr, box.h * dpr, box.x, box.y, box.w, box.h);
+        c.beginPath();
+        c.rect(box.x, box.y, box.w, box.h);
+        c.clip();
+        c.translate(cx, cy);
+        c.scale(k, k);
+        figureInk(c, R, dude, 0, 0, CANON);
+        c.restore();
+        MOTION = REST;
+        BOIL = 0;
+      },
+      // the whole sheet, for the first frame and after a resize
+      blit() {
+        c.save();
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        c.drawImage(bd, 0, 0, bd.width, bd.height, 0, 0, w, h);
+        c.restore();
+        last = -1;
+      },
+    };
+  }
+
   // ---------- app ----------
-  const PLATE = !!new URLSearchParams(location.search).get("plate");
+  const Q = new URLSearchParams(location.search);
+  const PLATE = !!Q.get("plate");
   if (PLATE) document.body.classList.add("plate");
+  // ?anim=1 to start moving, ?m=wave to insist on one. Without ?m he does
+  // whatever his seed says he does, which is most of the fun of it.
+  let animOn = Q.get("anim") === "1" || Q.get("anim") === "true";
+  const forcedMotion = MOTIONS[Q.get("m")] ? Q.get("m") : null;
+  // ?ph=0.25 freezes the cycle at one phase, so a frame can be looked at
+  // properly instead of being caught in passing
+  const forcedPhase = Q.get("ph") !== null && !isNaN(parseFloat(Q.get("ph"))) ? parseFloat(Q.get("ph")) : null;
 
   const links = { another: btn, a: document.getElementById("link-a"), b: document.getElementById("link-b") };
 
@@ -4740,6 +5089,39 @@
 
   let count = 0;
   let seed = parseSeed();
+  let anim = null;
+  let lastDude = null;
+  let lastCssW = 0;
+  let lastCssH = 0;
+  let lastDpr = 1;
+  let raf = 0;
+  let startedAt = 0;
+  let frameNo = 0;
+
+  function stopAnim() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    anim = null;
+  }
+
+  // Twelve drawings a second. Not a frame rate chosen to be cheap — a hand
+  // does not redraw a figure sixty times a second, and at sixty the boil
+  // turns into a shimmer and the whole thing stops looking drawn. Twelve is
+  // where it reads as a flipbook, and it is also two frames on ones for every
+  // frame a screen shows, which is exactly how this has always been done.
+  const FPS = 12;
+
+  function tick(now) {
+    raf = requestAnimationFrame(tick);
+    if (!anim) return;
+    if (!startedAt) startedAt = now;
+    const el = (now - startedAt) / 1000;
+    const f = Math.floor(el * FPS);
+    if (f === frameNo) return;
+    frameNo = f;
+    const period = MOTION_PERIOD[anim.kind] || 1.4;
+    anim.book.draw((el / period) % 1, f);
+  }
 
   function render(nextSeed) {
     seed = nextSeed >>> 0;
@@ -4762,9 +5144,24 @@
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.__dpr = dpr;
+    stopAnim();
+    lastDude = dude;
+    lastCssW = cssW;
+    lastCssH = cssH;
+    lastDpr = dpr;
     if (PLATE) {
       drawPlate(ctx, cssW, cssH, seed);
       placeHits(null);
+    } else if (animOn) {
+      const kind = forcedMotion || MOTION_NAMES[rngFor(seed, "motion").i(0, MOTION_NAMES.length - 1)];
+      const book = makeAnimation(canvas, seed, dude, cssW, cssH, dpr, kind);
+      anim = { book, kind };
+      placeHits(book.hits);
+      book.blit();
+      startedAt = 0;
+      frameNo = -1;
+      book.draw(forcedPhase ?? 0, 0);
+      if (forcedPhase === null && !raf) raf = requestAnimationFrame(tick);
     } else {
       placeHits(drawDude(ctx, R, dude, cssW, cssH, seed));
     }
@@ -4781,9 +5178,36 @@
 
   btn.addEventListener("click", another);
   window.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && e.target === document.body) {
+    if (e.target !== document.body) return;
+    if (e.code === "Space") {
       e.preventDefault();
       another();
+      return;
+    }
+    if (PLATE) return;
+    // A: make him move, or stop him. M: give him something else to do.
+    if (e.key === "a" || e.key === "A") {
+      e.preventDefault();
+      animOn = !animOn;
+      const url = new URL(location.href);
+      if (animOn) url.searchParams.set("anim", "1");
+      else url.searchParams.delete("anim");
+      history.replaceState(null, "", url);
+      count -= 1;
+      render(seed);
+      return;
+    }
+    if ((e.key === "m" || e.key === "M") && anim) {
+      e.preventDefault();
+      const i = MOTION_NAMES.indexOf(anim.kind);
+      const kind = MOTION_NAMES[(i + 1) % MOTION_NAMES.length];
+      const book = makeAnimation(canvas, seed, lastDude, lastCssW, lastCssH, lastDpr, kind);
+      anim = { book, kind };
+      placeHits(book.hits);
+      book.blit();
+      startedAt = 0;
+      frameNo = -1;
+      book.draw(0, 0);
     }
   });
   // A phone fires resize for the address bar sliding away. Redrawing the whole

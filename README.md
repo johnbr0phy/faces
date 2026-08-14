@@ -36,7 +36,21 @@ then visit `http://localhost:8765`.
 Space, click, or tap for another. The seed is in the URL (`?s=4929`), so every
 dude is reproducible.
 
+Press **A** to make him move, and **M** to give him something else to do — or
+load `?anim=1`, with `?m=walk|wave|jump|look|dance|shrug` to insist on one.
+Without `?m` he does whatever his seed says he does.
+
+He is not a picture being tweened. The head is already a skull with a yaw, a
+pitch and a roll, and the body is already a stick rig the silhouette is grown
+around; animating him is a matter of moving that rig and inking him again.
+Twelve drawings a second, each one drawn from scratch, so the line boils the
+way a line does when a hand draws it twice and the head turns in space rather
+than skewing on the page. The sheet — paper, grain, name, the words at the
+foot of the page — is laid down once and reused, because none of it moves and
+the grain pass alone costs three times what the whole figure does.
+
 `?plate=1` renders a sheet of 48 heads on one page.
 
 `scripts/shot.sh` screenshots seeded dudes; `scripts/plate.sh` does the same for
-a sheet.
+a sheet; `scripts/anim.sh <seed> <motion>` grabs the frames of one cycle and
+`scripts/strip.py` lays them out as a strip to flip through.
