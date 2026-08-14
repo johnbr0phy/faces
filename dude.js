@@ -233,6 +233,14 @@
       band(-0.32, 0.3, sd + 401, 0.45);
       band(0.32, 0.3, sd + 733, 0.47);
     }
+    // the odd blot where the nib sat down too long
+    if (w > 1.4 && rng.chance(0.1)) {
+      const k = rng.i(2, Math.max(3, n - 3));
+      const q = P[Math.min(n - 1, k)];
+      c.beginPath();
+      c.ellipse(q.x + rng.f(-1, 1), q.y + rng.f(-1, 1), W[k] * rng.f(0.8, 1.5), W[k] * rng.f(0.7, 1.2), rng.f(0, 3), 0, Math.PI * 2);
+      c.fill();
+    }
     // pools where the nib lingered
     for (let k = 3; k < n - 3; k += 2) {
       if (!live[k] || W[k] < w * 1.3) continue;
@@ -263,6 +271,19 @@
         w: (opt.w ?? 1.8) * rng.f(0.6, 0.82),
         dry: (opt.dry ?? 1) * 1.9,
         color: opt.color,
+      });
+    }
+    // the pen runs past the corner instead of stopping on it
+    if (opt.overshoot !== false && !opt.closed && path.length >= 2 && rng.chance(0.42)) {
+      const a = path[path.length - 2];
+      const b = path[path.length - 1];
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const g = (opt.w ?? 1.8) * rng.f(1.2, 4.5);
+      nib(c, rng, [b, { x: b.x + ((b.x - a.x) / d) * g, y: b.y + ((b.y - a.y) / d) * g }], {
+        w: (opt.w ?? 1.8) * rng.f(0.4, 0.75),
+        color: opt.color,
+        dry: 1.4,
+        wobble: 0.4,
       });
     }
     if (passes < 2 || path.length < 2) return;
@@ -350,6 +371,47 @@
       const b = { x: cx + (dx / d) * (d + reach - bite * 0.85), y: cy + (dy / d) * (d + reach - bite * 0.85) };
       nib(c, rng, [a, b], { w: bite * rng.f(0.34, 0.68), color, dry: 0.9, wobble: 0.5, alpha: opt.alpha ?? 1 });
     }
+  }
+
+  // Anywhere we paint paper over the drawing to occlude it, the fibre has to
+  // go back on top, or the figure reads as a cut-out pasted on the sheet.
+  function refibre(c, rng, poly) {
+    if (!poly || poly.length < 3) return;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of poly) {
+      if (p.x < x0) x0 = p.x;
+      if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y;
+      if (p.y > y1) y1 = p.y;
+    }
+    const area = (x1 - x0) * (y1 - y0);
+    if (!isFinite(area) || area <= 0) return;
+    c.save();
+    c.beginPath();
+    poly.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+    c.closePath();
+    c.clip();
+    const n = Math.min(700, Math.round(area / 90));
+    for (let i = 0; i < n; i++) {
+      const a = rng.f(0, Math.PI * 2);
+      const len = rng.f(3, 20);
+      c.strokeStyle = rng.chance(0.55) ? "rgba(74,60,40,0.03)" : "rgba(255,253,246,0.05)";
+      c.lineWidth = rng.f(0.4, 1.0);
+      const x = rng.f(x0, x1);
+      const y = rng.f(y0, y1);
+      c.beginPath();
+      c.moveTo(x, y);
+      c.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      c.stroke();
+    }
+    for (let i = 0; i < n * 4; i++) {
+      c.fillStyle = rng.chance(0.6) ? "rgba(48,36,22,0.032)" : "rgba(255,255,255,0.034)";
+      c.fillRect(rng.f(x0, x1), rng.f(y0, y1), rng.f(0.3, 1.2), rng.f(0.25, 0.8));
+    }
+    c.restore();
   }
 
   // Solid mass with a ragged, hand-cut edge.
@@ -518,8 +580,10 @@
         } else if (!edge) {
           // Tooth shows through a mass in PATCHES, where the sheet rides high
           // under the nib — never as an even sprinkle across the whole black.
+          // Kept light: the erosion that reads as ink belongs in the mass
+          // itself, at the scale of the mark, not in a screen-space filter.
           const t = valueNoise(x * 0.045, y * 0.045, 5501);
-          if (t > 0.6 && u < (t - 0.6) * 0.42) {
+          if (t > 0.72 && u < (t - 0.72) * 0.3) {
             const fade = 0.2 + u * 6;
             d[p] = r + (pr - r) * fade;
             d[p + 1] = g + (pg - g) * fade;
@@ -763,6 +827,7 @@
   function drawHead(c, rng, skull, skinWash) {
     const hull = skull.silhouette(rng);
     inkFill(c, rng, hull, PAPER, 1, 0.6);
+    refibre(c, rng, hull);
     if (skinWash) inkFill(c, rng, hull, skinWash, 0.16, 0.6);
     // A head is not one closed loop. It is a cranium drawn over, then a jaw
     // drawn under, and they overshoot and cross where they meet — which is
@@ -788,10 +853,38 @@
 
     const earL = pin(skull, { x: -0.92, y: 0.02, z: 0.05 });
     const earR = pin(skull, { x: 0.92, y: 0.02, z: 0.05 });
-    const er = skull.s * rng.f(0.17, 0.26);
-    if (earL.z > -0.02 && rng.chance(0.88)) drawEar(c, rng, earL.x, earL.y, er, -1);
-    if (earR.z > -0.02 && rng.chance(0.88)) drawEar(c, rng, earR.x, earR.y, er, 1);
+    const er = skull.s * rng.f(0.2, 0.32);
+    if (earL.z > -0.02) drawEar(c, rng, earL.x, earL.y, er * rng.f(0.85, 1.15), -1);
+    if (earR.z > -0.02) drawEar(c, rng, earR.x, earR.y, er * rng.f(0.85, 1.15), 1);
     return hull;
+  }
+
+  // A little neck and collar under the chin. Every head on the reference
+  // plates has one; a head floating alone on the paper does not read.
+  function drawNeck(c, rng, skull) {
+    const s = skull.s;
+    const chin = skull.limit(skull.project({ x: 0, y: 0.95, z: 0.35 }), 0);
+    const drop = s * rng.f(0.14, 0.3);
+    const halfW = s * rng.f(0.3, 0.46);
+    const l = { x: chin.x - halfW, y: chin.y - s * 0.04 };
+    const r = { x: chin.x + halfW * rng.f(0.85, 1.15), y: chin.y - s * 0.02 };
+    const lb = { x: l.x + rng.f(-3, 3), y: chin.y + drop };
+    const rb = { x: r.x + rng.f(-3, 3), y: chin.y + drop * rng.f(0.9, 1.1) };
+    inkPoly(c, rng, [l, lb], { w: s * 0.02, dry: 0.5 });
+    inkPoly(c, rng, [r, rb], { w: s * 0.02, dry: 0.5 });
+    if (rng.chance(0.6)) {
+      // the collar, or a bow tie, or a scribble that stands for one
+      const mid = { x: (lb.x + rb.x) / 2, y: (lb.y + rb.y) / 2 };
+      inkPoly(c, rng, [{ x: lb.x - s * 0.12, y: lb.y - s * 0.02 }, { x: mid.x, y: mid.y + s * rng.f(0.04, 0.1) }, { x: rb.x + s * 0.12, y: rb.y - s * 0.02 }], { w: s * 0.019, dry: 0.6, wobble: s * 0.03 });
+      if (rng.chance(0.45)) {
+        inkPoly(c, rng, [
+          { x: mid.x - s * 0.09, y: mid.y - s * 0.03 },
+          { x: mid.x, y: mid.y + s * 0.04 },
+          { x: mid.x + s * 0.09, y: mid.y - s * 0.03 },
+          { x: mid.x, y: mid.y + s * 0.04 },
+        ], { w: s * 0.017, dry: 0.7 });
+      }
+    }
   }
 
   function drawEar(c, rng, x, y, r, side) {
@@ -1353,7 +1446,7 @@
     // raw 3D points works until the head turns, and then the nose walks off
     // across the cheek. The axis turns with the skull; the nose rides it.
     const fy = skull.faceY || 0;
-    const browP = skull.project({ x: 0, y: -0.34 + fy, z: 0.72 });
+    const browP = skull.project({ x: rng.f(-0.05, 0.05), y: -0.24 + fy + rng.f(-0.05, 0.06), z: 0.72 });
     const chinP = skull.project({ x: 0, y: 0.95, z: 0.4 });
     let ax = chinP.x - browP.x;
     let ay = chinP.y - browP.y;
@@ -1568,12 +1661,31 @@
   // side, down the leg, round the shoe and back — then clothes cut into it.
   // A torso box with tube limbs stuck on is the thing that reads as assembly.
 
-  function edgeOf(pts, r, side) {
+  // Two lines drawn down a limb by hand never stay parallel. Offsetting one
+  // centreline gives a machine-perfect constant gap, which is the thing that
+  // makes an arm read as a stroked path instead of a drawing.
+  function edgeOf(pts, r, side, seed = 0) {
     const N = normals(pts);
     const out = [];
-    for (let i = 0; i < pts.length; i++) {
-      const rr = typeof r === "function" ? r(i / (pts.length - 1 || 1)) : r;
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1 || 1);
+      const j = fbm2(t * 3.6 + seed * 0.7, seed * 1.3 + 4, 3301 + ((seed * 37) | 0)) - 0.5;
+      const j2 = fbm2(t * 9.1 + seed, seed * 0.4 + 9, 5507 + ((seed * 11) | 0)) - 0.5;
+      const rr = (typeof r === "function" ? r(t) : r) * (1 + j * 0.44 + j2 * 0.16);
       out.push({ x: pts[i].x + N[i].x * rr * side, y: pts[i].y + N[i].y * rr * side });
+    }
+    return out;
+  }
+
+  // an arc with a hand's radius, not a compass's
+  function arcPts(x, y, r, a0, a1, rng) {
+    const n = Math.max(6, Math.round((r * Math.abs(a1 - a0)) / 4));
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (a1 - a0) * (i / n);
+      const rr = r * (1 + (fbm2(i * 0.4, r * 0.03, rng.seed + 13) - 0.5) * 0.22);
+      out.push({ x: x + Math.cos(a) * rr, y: y + Math.sin(a) * rr * rng.f(0.95, 1.05) });
     }
     return out;
   }
@@ -1645,7 +1757,15 @@
     const asymR = rng.f(0.86, 1.14);
     const asym = (side) => (side < 0 ? asymL : asymR);
 
-    const P = (x, y) => ({ x: cx + x + lx * (y - neckY) / (s * 2), y });
+    // the torso leans a few degrees off the head's axis
+    const tilt = rng.f(-0.1, 0.1);
+    const ct = Math.cos(tilt);
+    const st = Math.sin(tilt);
+    const P = (x, y) => {
+      const dy = y - neckY;
+      const dx = x + (lx * dy) / (s * 2);
+      return { x: cx + dx * ct - dy * st, y: neckY + dx * st + dy * ct };
+    };
 
     // ---- skeleton lines the outline is grown around ----
     const arm = (side) => {
@@ -1763,13 +1883,13 @@
       .concat([waistL])
       .concat(span(waistL, hipL, 3))
       .concat([hipL])
-      .concat(edgeOf(LlS, legR, -1).slice(1))
+      .concat(edgeOf(LlS, legR, -1, 31).slice(1))
       .concat(Lfoot)
-      .concat(edgeOf(LlS, legR, 1).reverse().slice(1, -1))
+      .concat(edgeOf(LlS, legR, 1, 43).reverse().slice(1, -1))
       .concat([crotch])
-      .concat(edgeOf(RlS, legR, -1).slice(1))
+      .concat(edgeOf(RlS, legR, -1, 57).slice(1))
       .concat(Rfoot.slice().reverse())
-      .concat(edgeOf(RlS, legR, 1).reverse().slice(1, -1))
+      .concat(edgeOf(RlS, legR, 1, 71).reverse().slice(1, -1))
       .concat([hipR])
       .concat(span(hipR, waistR, 3))
       .concat([waistR])
@@ -1778,13 +1898,13 @@
       .concat(span(shoulderR, neckR, 3))
       .concat([neckR]);
 
-    const armShape = (S) => {
-      const a = edgeOf(S, armR, -1);
-      const b = edgeOf(S, armR, 1);
+    const armShape = (S, sd) => {
+      const a = edgeOf(S, armR, -1, sd);
+      const b = edgeOf(S, armR, 1, sd + 13);
       return a.concat(round(S, armR(1))).concat(b.reverse());
     };
-    const Larm = armShape(LaS);
-    const Rarm = armShape(RaS);
+    const Larm = armShape(LaS, 11);
+    const Rarm = armShape(RaS, 83);
 
     if (clothes.wash) {
       inkFill(c, rng, core, clothes.wash, 0.22, 0.8);
@@ -1799,6 +1919,8 @@
     // the arm sits in front of the body, so it hides the line behind it
     inkFill(c, rng, Larm, clothes.wash || PAPER, clothes.wash ? 0.22 : 1, 0.8);
     inkFill(c, rng, Rarm, clothes.wash || PAPER, clothes.wash ? 0.22 : 1, 0.8);
+    refibre(c, rng, Larm);
+    refibre(c, rng, Rarm);
     inkPoly(c, rng, Larm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
     inkPoly(c, rng, Rarm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
     if (pose !== "folded" && pose !== "pockets") {
@@ -1821,19 +1943,19 @@
     const sleeveT = rng.f(0.42, 0.72);
     const cuff = (S, side) => {
       const i = Math.round(sleeveT * (S.length - 1));
-      const a = edgeOf(S, armR, -1)[i];
-      const b = edgeOf(S, armR, 1)[i];
+      const a = edgeOf(S, armR, -1, side < 0 ? 11 : 83)[i];
+      const b = edgeOf(S, armR, 1, side < 0 ? 24 : 96)[i];
       if (a && b) inkLine(c, rng, a.x, a.y, b.x, b.y, s * 0.016);
     };
 
     if (clothes.kind === "tee") {
       cuff(LaS, -1);
       cuff(RaS, 1);
-      inkArc(c, rng, (neckL.x + neckR.x) / 2, neckL.y + s * 0.06, s * rng.f(0.24, 0.32), 0.42, Math.PI - 0.42, s * 0.017);
-      inkLine(c, rng, waistL.x + s * 0.04, hemY, waistR.x - s * 0.04, hemY + rng.f(-4, 4), s * 0.018);
+      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.06, s * rng.f(0.24, 0.32), 0.42, Math.PI - 0.42, rng), { w: s * 0.017, dry: 0.6, wobble: s * 0.035 });
+      inkPoly(c, rng, [{ x: waistL.x + s * 0.04, y: hemY }, { x: (waistL.x + waistR.x) / 2, y: hemY + rng.f(-5, 6) }, { x: waistR.x - s * 0.04, y: hemY + rng.f(-4, 5) }], { w: s * 0.018, dry: 0.6, wobble: s * 0.045 });
     } else if (clothes.kind === "hoodie") {
-      inkArc(c, rng, (neckL.x + neckR.x) / 2, neckY + s * 0.36, s * 0.42, 0.35, Math.PI - 0.35, s * 0.019);
-      inkLine(c, rng, waistL.x + s * 0.04, hemY, waistR.x - s * 0.04, hemY + rng.f(-3, 5), s * 0.021);
+      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckY + s * 0.36, s * 0.42, 0.35, Math.PI - 0.35, rng), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
+      inkPoly(c, rng, [{ x: waistL.x + s * 0.04, y: hemY }, { x: (waistL.x + waistR.x) / 2, y: hemY + rng.f(-5, 6) }, { x: waistR.x - s * 0.04, y: hemY + rng.f(-4, 5) }], { w: s * 0.021, dry: 0.6, wobble: s * 0.045 });
       const pk = (neckL.x + neckR.x) / 2;
       inkPoly(c, rng, [
         { x: pk - s * 0.34, y: hemY - s * 0.42 },
@@ -1860,11 +1982,11 @@
         { x: mid + s * 0.06, y: shY + s * 0.36 },
         { x: mid + s * 0.34, y: shY + s * 0.44 },
       ], { w: s * 0.016 });
-      inkLine(c, rng, waistL.x + s * 0.04, hemY, waistR.x - s * 0.04, hemY + rng.f(-3, 4), s * 0.02);
+      inkPoly(c, rng, [{ x: waistL.x + s * 0.04, y: hemY }, { x: (waistL.x + waistR.x) / 2, y: hemY + rng.f(-5, 6) }, { x: waistR.x - s * 0.04, y: hemY + rng.f(-4, 5) }], { w: s * 0.02, dry: 0.6, wobble: s * 0.045 });
       cuff(LaS, -1);
       cuff(RaS, 1);
     } else if (clothes.kind === "sweater") {
-      inkArc(c, rng, (neckL.x + neckR.x) / 2, neckY + s * 0.16, s * 0.3, 0.3, Math.PI - 0.3, s * 0.019);
+      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckY + s * 0.16, s * 0.3, 0.3, Math.PI - 0.3, rng), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
       for (let i = 0; i < 4; i++) {
         const y = hemY - s * 0.16 + i * s * 0.055;
         inkLine(c, rng, waistL.x + s * 0.08, y, waistR.x - s * 0.08, y + rng.f(-2, 2), s * 0.012);
@@ -2305,21 +2427,20 @@
     // The name goes where there is room, the way a hand writes it in the gap
     // it finds — not pinned at the same offset off the jaw every time.
     const size = rng.f(21, 32);
-    const spot = rng.pick(["jaw", "jaw", "shoulder", "above", "feet", "feet"]);
+    // keep it clear of the silhouette — a name cutting through a shoulder
+    // is the one thing a person writing it would never do
+    const spot = rng.pick(["jaw", "jaw", "shoulder", "feet", "feet"]);
     let nameX;
     let nameY;
-    if (spot === "above") {
-      nameX = cx - s * rng.f(0.4, 1.0);
-      nameY = cy - s * rng.f(1.5, 1.9);
-    } else if (spot === "feet") {
-      nameX = cx + s * rng.f(-1.5, 0.4);
-      nameY = body.footY + s * rng.f(0.25, 0.7);
+    if (spot === "feet") {
+      nameX = cx + s * rng.f(-1.4, 0.5);
+      nameY = Math.min(h - size * 1.5, body.footY + s * rng.f(0.3, 0.75));
     } else if (spot === "shoulder") {
-      nameX = cx + s * rng.f(1.0, 1.5);
-      nameY = cy + s * rng.f(1.5, 2.2);
+      nameX = cx + s * rng.f(1.2, 1.6);
+      nameY = cy + s * rng.f(1.6, 2.4);
     } else {
-      nameX = cx + s * rng.f(1.0, 1.35);
-      nameY = cy + s * rng.f(0.1, 0.6);
+      nameX = cx + s * rng.f(1.15, 1.45);
+      nameY = cy + s * rng.f(0.05, 0.6);
     }
     const nameW = size * (String(dude.name).length * 0.92 + 0.6);
     nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
@@ -2365,6 +2486,7 @@
         drawNose(c, rng, skull, d.nose, d.noseHeavy);
         drawMouth(c, rng, skull, d.mouth);
         drawFacialHair(c, rng, skull, d.beard);
+        if (rng.chance(0.62)) drawNeck(c, rng, skull);
       }
     }
     grainPass(c);
