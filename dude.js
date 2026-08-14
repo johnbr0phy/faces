@@ -239,8 +239,8 @@
     }
     // the odd blot where the nib sat down too long
     if (w > 1.4 && rng.chance(0.1)) {
-      const k = rng.i(2, Math.max(3, n - 3));
-      const q = P[Math.min(n - 1, k)];
+      const k = Math.min(n - 1, Math.max(0, rng.i(2, Math.max(3, n - 3))));
+      const q = P[k];
       c.beginPath();
       c.ellipse(q.x + rng.f(-1, 1), q.y + rng.f(-1, 1), W[k] * rng.f(0.8, 1.5), W[k] * rng.f(0.7, 1.2), rng.f(0, 3), 0, Math.PI * 2);
       c.fill();
@@ -507,36 +507,7 @@
     inkPoly(c, rng, pts, { w });
   }
 
-  function hatch(c, rng, x, y, w, h, dir = 1, density = 8) {
-    const n = Math.max(3, Math.round(density));
-    for (let i = 0; i < n; i++) {
-      if (rng.chance(0.16)) continue;
-      const t = i / (n - 1 || 1);
-      if (dir > 0) {
-        inkLine(c, rng, x + t * w, y, x + t * w - h * 0.15, y + h, 0.75, 1);
-      } else {
-        inkLine(c, rng, x, y + t * h, x + w, y + t * h + w * 0.08, 0.75, 1);
-      }
-    }
-  }
 
-  function wash(c, rng, x, y, rx, ry, color, alpha = 0.22) {
-    c.save();
-    c.fillStyle = color;
-    c.globalAlpha = alpha * rng.f(0.7, 1);
-    c.beginPath();
-    c.ellipse(
-      x + rng.f(-2, 2),
-      y + rng.f(-2, 2),
-      rx * rng.f(0.88, 1.12),
-      ry * rng.f(0.88, 1.12),
-      rng.f(-0.25, 0.25),
-      0,
-      Math.PI * 2
-    );
-    c.fill();
-    c.restore();
-  }
 
   // ---------- paper + grain pass over ink ----------
   function paper(c, w, h, rng) {
@@ -586,7 +557,11 @@
     }
   }
 
-  function grainPass(c) {
+  function grainPass(c, dpr) {
+    // The noise was indexed in physical pixels while everything else is drawn
+    // in CSS coordinates, so the same seed produced a different sheet on a
+    // retina screen. Divide back out so the grain has a fixed size on the page.
+    const k = dpr || 1;
     const iw = c.canvas.width;
     const ih = c.canvas.height;
     let img;
@@ -603,7 +578,9 @@
         const g = d[p + 1];
         const b = d[p + 2];
         const lum = r * 0.3 + g * 0.5 + b * 0.2;
-        let n = Math.imul(Math.imul(x + 1, 374761393) ^ Math.imul(y + 3, 668265263), 2246822519);
+        const gx = Math.round(x / k);
+        const gy = Math.round(y / k);
+        let n = Math.imul(Math.imul(gx + 1, 374761393) ^ Math.imul(gy + 3, 668265263), 2246822519);
         n = Math.imul(n ^ (n >>> 15), 3266489917);
         const u = ((n ^ (n >>> 13)) >>> 0) / 4294967296;
         if (lum > 214) {
@@ -611,9 +588,9 @@
           // tooth: without this the ground reads as a flat digital field, and
           // that alone gives the sheet away next to a photographed one.
           const m =
-            (valueNoise(x * 0.011, y * 0.011, 9001) - 0.5) * 1.15 +
-            (valueNoise(x * 0.037, y * 0.037, 9109) - 0.5) * 1.2 +
-            (valueNoise(x * 0.13, y * 0.13, 9227) - 0.5) * 1.05;
+            (valueNoise(gx * 0.011, gy * 0.011, 9001) - 0.5) * 1.15 +
+            (valueNoise(gx * 0.037, gy * 0.037, 9109) - 0.5) * 1.2 +
+            (valueNoise(gx * 0.13, gy * 0.13, 9227) - 0.5) * 1.05;
           const v = m * 9.2 + (u - 0.5) * 5.2;
           d[p] = Math.max(0, Math.min(255, r + v));
           d[p + 1] = Math.max(0, Math.min(255, g + v * 0.94));
@@ -632,7 +609,7 @@
           // under the nib — never as an even sprinkle across the whole black.
           // Kept light: the erosion that reads as ink belongs in the mass
           // itself, at the scale of the mark, not in a screen-space filter.
-          const t = valueNoise(x * 0.045, y * 0.045, 5501);
+          const t = valueNoise(gx * 0.045, gy * 0.045, 5501);
           if (t > 0.72 && u < (t - 0.72) * 0.3) {
             const fade = 0.2 + u * 6;
             d[p] = r + (pr - r) * fade;
@@ -745,7 +722,7 @@
     // Outline = radial extent of the projected skull, then lumped.
     // Not a convex hull: the lump profile can dent inward, which is the
     // difference between a potato and an egg.
-    silhouette(rng) {
+    silhouette() {
       const cloud = [];
       const nu = 30;
       const nv = 18;
@@ -803,8 +780,11 @@
           if (up < 1.15) k += this.brow * Math.cos((up / 1.15) * Math.PI * 0.5) * 0.9;
         }
         if (this.flat > 0) {
+          // dA is the angular distance from flatA, so the facet belongs where
+          // dA is SMALL. Testing dA > PI - 0.62 put it on the far side of the
+          // head from the angle that was asked for.
           const dA = Math.abs(((a - this.flatA + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-          if (dA > Math.PI - 0.62) k -= this.flat * (dA - (Math.PI - 0.62)) / 0.62;
+          if (dA < 0.62) k -= this.flat * (1 - dA / 0.62);
         }
         const r = sm[i] * k;
         rr[i] = r;
@@ -947,43 +927,18 @@
       return { x: this.cx + dx * k, y: this.cy + dy * k, z: p.z, front: p.front };
     }
 
-    seedJit(rng) {
-      return (rng.seed % 97) * 0.02;
-    }
   }
 
-  function convexHull(points) {
-    const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
-    if (pts.length < 3) return pts;
-    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    const lower = [];
-    for (const p of pts) {
-      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-      lower.push(p);
-    }
-    const upper = [];
-    for (let i = pts.length - 1; i >= 0; i--) {
-      const p = pts[i];
-      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-      upper.push(p);
-    }
-    lower.pop();
-    upper.pop();
-    return lower.concat(upper);
-  }
 
   // Features stay on the head. Hats and hair are allowed to leave it.
   function pin(skull, local) {
     return skull.limit(skull.deform(skull.project(local)), skull.s * 0.045);
   }
 
-  function pinOut(skull, local, mult) {
-    return skull.capOut(skull.project(local), mult ?? 1.3);
-  }
 
   // ---------- head ----------
   function drawHead(c, rng, skull, skinWash) {
-    const hull = skull.silhouette(rng);
+    const hull = skull.silhouette();
     inkFill(c, rng, hull, PAPER, 1, 0.6);
     refibre(c, rng, hull);
     if (skinWash) inkFill(c, rng, hull, skinWash, 0.16, 0.6);
@@ -1189,7 +1144,10 @@
         run = null;
       }
     }
-    return best && best.length >= 3 ? best : pts;
+    // No fallback to `pts`: returning the whole sweep hands back the
+    // back-facing points this function exists to remove, and the caller then
+    // builds a mass from temples that are round the back of the skull.
+    return best && best.length >= 3 ? best : null;
   }
 
   function hairMass(skull, hull, rng, opt = {}) {
@@ -1203,7 +1161,7 @@
       sideBias: (opt.sideBias ?? 0) + rng.f(-0.1, 0.1),
     });
     const front = frontRun(hairline(skull, rng, opt));
-    if (front.length < 3) return null;
+    if (!front || front.length < 3) return null;
     const a = front[0];
     const b = front[front.length - 1];
     const puff = (opt.puff ?? 0.05) * skull.s;
@@ -1267,11 +1225,16 @@
       });
     }
     if (kind === "wedge") {
-      // rising steadily from one temple to the other
-      const h = s * rng.f(0.1, 0.32) * (rng.chance(0.5) ? 1 : -1);
+      // Rising steadily from one temple to the other. The displacement is
+      // always outward — a negative height used to push that side inside the
+      // skull and could fold the hair polygon over itself. Direction is a
+      // choice of which temple is high, not a sign flip.
+      const h = s * rng.f(0.1, 0.32);
+      const flip = rng.chance(0.5);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
-        return push(p, h * Math.sin(t * Math.PI * 0.5 + (h < 0 ? Math.PI * 0.5 : 0)));
+        const u = flip ? 1 - t : t;
+        return push(p, h * u);
       });
     }
     if (kind === "dome") {
@@ -1304,17 +1267,6 @@
     });
   }
 
-  function hairlineRing(skull, hl, wrap = 0.92) {
-    const pts = [];
-    const v = Math.asin(Math.max(-0.95, Math.min(0.15, hl)));
-    const n = 24;
-    for (let i = 0; i <= n; i++) {
-      const u = (i / n - 0.5) * Math.PI * 2 * wrap;
-      const p = pin(skull, sphere(u, v));
-      if (p.z > -0.5) pts.push(p);
-    }
-    return pts;
-  }
 
   // Fill it black, cut the hairline in hard, let a few hairs escape the top.
   function inkMass(c, rng, h, color, opt = {}) {
@@ -1607,7 +1559,7 @@
     if (style === "spiky") {
       const h = mk({ lineY: -0.5, puff: 0.04, wob: 0.04 });
       if (h) {
-        inkMass(c, rng, h, color, { strays: 0, stroke: false });
+        inkMass(c, rng, h, color, { strays: 0 });
         for (let i = 0; i < h.top.length; i += 1) {
           const q = h.top[i];
           const ox = q.x - skull.cx;
@@ -1929,7 +1881,6 @@
     ay /= faceLen;
 
     const lean = rng.sign();
-    const side = Math.sign(Math.sin(skull.yaw)) || lean; // the turn picks a near side
     // The nose is never plumb with the head axis. Tilting it a few degrees is
     // most of what sells a turn.
     const tilt = rng.f(0.08, 0.3) * lean;
@@ -2245,7 +2196,7 @@
   // and hip width, torso and leg length, and the waist profile all move
   // together, because a barrel-chested man is not a lanky one with wider
   // shoulders.
-  function bodyKind(rng) {
+  function bodyKind(rng, person) {
     const kinds = [
       // stocky: wide, short, thick through the middle
       () => ({ shW: rng.f(1.14, 1.42), hipW: rng.f(0.92, 1.18), torso: rng.f(1.6, 1.9),
@@ -2266,12 +2217,20 @@
       () => ({ shW: rng.f(0.92, 1.14), hipW: rng.f(0.66, 0.88), torso: rng.f(1.9, 2.25),
                legs: rng.f(1.7, 2.05), waist: rng.f(0.84, 1.16), armW: rng.f(0.16, 0.21) }),
     ];
-    return rng.pick(kinds)();
+    // The build decided for the person has to pick the body, or a heavy
+    // character gets a lanky torso and the character layer means nothing
+    // below the neck.
+    const byBuild = { heavy: [0, 0, 2, 2, 5], slight: [1, 1, 4, 4, 5], ordinary: [5, 5, 3, 1, 0, 2] };
+    const pool = (person && byBuild[person.build]) || [0, 1, 2, 3, 4, 5, 5];
+    let i = rng.pick(pool);
+    // an old frame narrows and stoops whatever it started as
+    if (person && person.age === "old" && rng.chance(0.4)) i = rng.pick([1, 4, 2]);
+    return kinds[i]();
   }
 
-  function drawBody(c, rng, cx, neckY, s, lean, clothes) {
+  function drawBody(c, rng, cx, neckY, s, lean, clothes, person) {
     const lx = lean * s * 0.26;
-    const B = bodyKind(rng);
+    const B = bodyKind(rng, person);
     const shW = s * B.shW;
     const hipW = s * B.hipW;
     const shY = neckY + s * rng.f(0.32, 0.54);
@@ -2494,12 +2453,18 @@
     // Arms are drawn LAST, over the finished garment. Drawn before it, every
     // hem and stripe ran straight across them and the arms read transparent.
     const drawArms = () => {
+      // Sleeve marks used to be drawn with the rest of the clothes, before
+      // this fill, so the fill erased them and the garment lost its cuffs.
       inkFill(c, rng, Larm, PAPER, 1, 0.8);
       inkFill(c, rng, Rarm, PAPER, 1, 0.8);
       refibre(c, rng, Larm);
       refibre(c, rng, Rarm);
       inkPoly(c, rng, Larm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
       inkPoly(c, rng, Rarm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
+      if (wantCuffs) {
+        cuff(LaS, -1);
+        cuff(RaS, 1);
+      }
       if (pose !== "folded" && pose !== "pockets") {
         hand(c, rng, LaS, armR(1), -1, s);
         hand(c, rng, RaS, armR(1), 1, s);
@@ -2540,6 +2505,7 @@
       return pts;
     };
 
+    let wantCuffs = false;
     const cuff = (S, side) => {
       if (rng.chance(0.22)) return; // not every sleeve gets marked
       const t = sleeveT + rng.f(-0.12, 0.12);
@@ -2564,8 +2530,7 @@
     };
 
     if (clothes.kind === "tee") {
-      cuff(LaS, -1);
-      cuff(RaS, 1);
+      wantCuffs = true;
       inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.06, s * rng.f(0.24, 0.32), 0.42, Math.PI - 0.42, rng), { w: s * 0.017, dry: 0.6, wobble: s * 0.035 });
       inkPoly(c, rng, hemPts(), { w: s * 0.018, dry: 0.6, wobble: s * 0.05 });
     } else if (clothes.kind === "hoodie") {
@@ -2598,16 +2563,14 @@
         { x: mid + s * 0.34, y: shY + s * 0.44 },
       ], { w: s * 0.016 });
       inkPoly(c, rng, hemPts(), { w: s * 0.02, dry: 0.6, wobble: s * 0.05 });
-      cuff(LaS, -1);
-      cuff(RaS, 1);
+      wantCuffs = true;
     } else if (clothes.kind === "sweater") {
       inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckY + s * 0.16, s * 0.3, 0.3, Math.PI - 0.3, rng), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
       for (let i = 0; i < 4; i++) {
         const y = hemY - s * 0.16 + i * s * 0.055;
         inkLine(c, rng, waistL.x + s * 0.08, y, waistR.x - s * 0.08, y + rng.f(-2, 2), s * 0.012);
       }
-      cuff(LaS, -1);
-      cuff(RaS, 1);
+      wantCuffs = true;
     }
 
     // Cloth has folds. A flat fill inside a clean outline is the difference
@@ -2706,12 +2669,10 @@
     inkMassFill(c, rng, Rfoot, INK, { bite: s * 0.04 });
 
     let maxX = -Infinity;
-    let minX = Infinity;
     for (const q of core.concat(Larm, Rarm)) {
       if (q.x > maxX) maxX = q.x;
-      if (q.x < minX) minX = q.x;
     }
-    return { hipY, footY, maxX, minX, core };
+    return { hipY, footY, maxX, core };
   }
 
   // ---------- handwritten name ----------
@@ -2822,8 +2783,18 @@
           y: y + rx * Math.sin(rot) + ry * Math.cos(rot) + jy,
         };
       };
+      const runs = [];
       cmds.forEach((cmd) => {
-        if (cmd.t === "M" || cmd.t === "L") {
+        if (cmd.t === "M") {
+          // a move is the pen leaving the paper. Treating it as a line drew a
+          // connector across every glyph built from two separate strokes.
+          const q = xf(cmd.p[0], cmd.p[1]);
+          px = q.x;
+          py = q.y;
+          if (pts.length > 1) runs.push(pts.slice());
+          pts.length = 0;
+          pts.push(q);
+        } else if (cmd.t === "L") {
           const q = xf(cmd.p[0], cmd.p[1]);
           px = q.x;
           py = q.y;
@@ -2851,7 +2822,12 @@
         const k = rng.f(0.04, 0.14);
         pts.push({ x: b.x + (b.x - a.x) * k * 3, y: b.y + (b.y - a.y) * k * 3 });
       }
-      inkPoly(c, rng, pts, { w: size * (wk ?? rng.f(0.075, 0.125)), passes: 1, dry: 0.55, wobble: size * rng.f(0.03, 0.055) });
+      if (pts.length > 1) runs.push(pts.slice());
+      const rw = size * (wk ?? rng.f(0.075, 0.125));
+      const rwob = size * rng.f(0.03, 0.055);
+      runs.forEach((run) => {
+        inkPoly(c, rng, run, { w: rw, passes: 1, dry: 0.55, wobble: rwob });
+      });
     });
     return w;
   }
@@ -3209,14 +3185,15 @@
     skull.faceY = dude.faceY;
     skull.gaze = dude.gaze;
     skull.eyeGap = dude.eyeGap;
-    const body = drawBody(c, rng, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes);
+    const body = drawBody(c, rng, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
     const hull = drawHead(c, rng, skull, dude.skin);
     drawHair(c, rng, skull, hull, dude.hair, dude.hairColor);
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
     const nose = drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
-    drawMouth(c, rng, skull, dude.mouth, nose);
+    // beard first: a filled mass drawn after the mouth swallows it
     drawFacialHair(c, rng, skull, dude.beard);
+    drawMouth(c, rng, skull, dude.mouth, nose);
 
     if (dude.colour) {
       const targets = [];
@@ -3268,7 +3245,7 @@
     nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
     drawName(c, rng, dude.name, nameX, nameY, size);
-    grainPass(c);
+    grainPass(c, c.__dpr);
   }
 
   // ---------- colour ----------
@@ -3354,8 +3331,8 @@
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
         const nose = drawNose(c, rng, skull, d.nose, d.noseHeavy);
-        drawMouth(c, rng, skull, d.mouth, nose);
         drawFacialHair(c, rng, skull, d.beard);
+        drawMouth(c, rng, skull, d.mouth, nose);
         if (rng.chance(0.5)) drawNeck(c, rng, skull);
         if (d.colour) {
           if (d.colour === "behind") {
@@ -3373,7 +3350,7 @@
         }
       }
     }
-    grainPass(c);
+    grainPass(c, c.__dpr);
   }
 
   // ---------- app ----------
@@ -3410,6 +3387,7 @@
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.__dpr = dpr;
     if (PLATE) drawPlate(ctx, cssW, cssH, seed);
     else drawDude(ctx, rng, dude, cssW, cssH);
     count += 1;
