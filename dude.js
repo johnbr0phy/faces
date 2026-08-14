@@ -703,6 +703,7 @@
       this.jawHigh = shape.jawHigh ?? 0;
       this.jawTaper = shape.jawTaper ?? 0.8;
       this.chinX = shape.chinX ?? 0;
+      this.chinW = shape.chinW ?? 0.14;
     }
 
     warp(local) {
@@ -784,6 +785,7 @@
         (rad[(i - 2 + NA) % NA] + rad[(i - 1 + NA) % NA] * 2 + rad[i] * 3 + rad[(i + 1) % NA] * 2 + rad[(i + 2) % NA]) / 9
       );
 
+      this._rad0 = sm.slice();
       const out = [];
       const rr = new Array(NA);
       for (let i = 0; i < NA; i++) {
@@ -819,10 +821,12 @@
         const P3 = (x, y, z) => this.project({ x, y, z });
         const cornerL = P3(-0.92 * this.jaw, 0.34 + this.jawHigh, 0.06);
         const cornerR = P3(0.92 * this.jaw, 0.34 + this.jawHigh, 0.06);
-        const chinP = P3(this.chinX, 1.0 + this.chin, 0.3);
-        const midL = P3(-0.5 * this.jaw * this.jawTaper, 0.86 + this.chin * 0.6, 0.24);
-        const midR = P3(0.5 * this.jaw * this.jawTaper, 0.86 + this.chin * 0.6, 0.24);
-        const chain = [cornerL, midL, chinP, midR, cornerR];
+        const cw = this.chinW;
+        const chinL = P3(this.chinX - cw, 1.0 + this.chin, 0.3);
+        const chinR = P3(this.chinX + cw, 1.0 + this.chin, 0.3);
+        const midL = P3(-0.62 * this.jaw * this.jawTaper, 0.84 + this.chin * 0.6, 0.24);
+        const midR = P3(0.62 * this.jaw * this.jawTaper, 0.84 + this.chin * 0.6, 0.24);
+        const chain = [cornerL, midL, chinL, chinR, midR, cornerR];
         const ang = (p) => Math.atan2(p.y - this.cy, p.x - this.cx);
         // ray from the centre against each segment of the jaw chain
         for (let i = 0; i < NA; i++) {
@@ -866,6 +870,40 @@
         out[i] = { x: this.cx + Math.cos(a) * rs[i], y: this.cy + Math.sin(a) * rs[i] };
       }
       return out;
+    }
+
+    // The smooth ellipsoid radius, before lumps and jaw.
+    rad0At(a) {
+      const rr = this._rad0;
+      if (!rr) return Infinity;
+      const NA = rr.length;
+      const f = (((a + Math.PI) / (Math.PI * 2)) * NA + NA) % NA;
+      const i = Math.floor(f);
+      const t = f - i;
+      return rr[i % NA] * (1 - t) + rr[(i + 1) % NA] * t;
+    }
+
+    // Carry a point on the SAME deformation the outline got.
+    //
+    // The lumps and the jaw were only ever applied to the silhouette, in 2D,
+    // after the fact. Features were still pinned to the smooth ellipsoid
+    // underneath, so a lopsided potato got its eyes placed as though it were
+    // an egg, and anything that overshot was simply clamped back inside. That
+    // is why odd heads looked like odd heads with a standard face laid on
+    // them. The deformation is now a field over the whole head: full strength
+    // at the silhouette, falling off to nothing at the centre, so a bulge
+    // carries the eye that sits on it and a square jaw carries the mouth.
+    deform(p) {
+      if (!this._rad || !this._rad0) return p;
+      const dx = p.x - this.cx;
+      const dy = p.y - this.cy;
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-6) return p;
+      const a = Math.atan2(dy, dx);
+      const base = this.rad0At(a);
+      if (!isFinite(base) || base < 1e-6) return p;
+      const k = 1 + (this.radAt(a) / base - 1) * Math.min(1, d / base);
+      return { x: this.cx + dx * k, y: this.cy + dy * k, z: p.z, front: p.front };
     }
 
     // Radius of the outline at a given screen angle.
@@ -936,7 +974,7 @@
 
   // Features stay on the head. Hats and hair are allowed to leave it.
   function pin(skull, local) {
-    return skull.limit(skull.project(local), skull.s * 0.045);
+    return skull.limit(skull.deform(skull.project(local)), skull.s * 0.045);
   }
 
   function pinOut(skull, local, mult) {
@@ -1911,7 +1949,7 @@
         x: browP.x + ax * t + px * (lat + off),
         y: browP.y + ay * t + py * (lat + off),
       };
-      return skull.limit(p, s * 0.16);
+      return skull.limit(skull.deform(p), s * 0.16);
     };
 
     if (style === "tri") {
@@ -1993,10 +2031,10 @@
       const gap = s * rng.f(0.16, 0.42);
       const off = s * rng.f(-0.09, 0.09);
       m = skull.limit(
-        {
+        skull.deform({
           x: nose.browP.x + nose.ax * (nose.base + gap) - nose.ay * off,
           y: nose.browP.y + nose.ay * (nose.base + gap) + nose.ax * off,
-        },
+        }),
         s * 0.14
       );
     } else {
@@ -2214,7 +2252,7 @@
                legs: rng.f(1.3, 1.62), waist: rng.f(1.06, 1.26), armW: rng.f(0.2, 0.25) }),
       // lanky: narrow, long, straight
       () => ({ shW: rng.f(0.7, 0.9), hipW: rng.f(0.48, 0.66), torso: rng.f(2.2, 2.6),
-               legs: rng.f(2.1, 2.55), waist: rng.f(0.74, 0.92), armW: rng.f(0.13, 0.17) }),
+               legs: rng.f(2.1, 2.55), waist: rng.f(0.74, 0.92), armW: rng.f(0.15, 0.19) }),
       // pot: narrow up top, heavy low down
       () => ({ shW: rng.f(0.8, 1.0), hipW: rng.f(1.0, 1.3), torso: rng.f(1.85, 2.15),
                legs: rng.f(1.5, 1.85), waist: rng.f(1.2, 1.5), armW: rng.f(0.17, 0.22) }),
@@ -2223,7 +2261,7 @@
                legs: rng.f(1.85, 2.2), waist: rng.f(0.66, 0.86), armW: rng.f(0.18, 0.23) }),
       // slight: small all over, short limbs
       () => ({ shW: rng.f(0.72, 0.92), hipW: rng.f(0.56, 0.76), torso: rng.f(1.55, 1.85),
-               legs: rng.f(1.35, 1.7), waist: rng.f(0.86, 1.1), armW: rng.f(0.13, 0.18) }),
+               legs: rng.f(1.35, 1.7), waist: rng.f(0.86, 1.1), armW: rng.f(0.15, 0.19) }),
       // ordinary, so the sheet has a baseline
       () => ({ shW: rng.f(0.92, 1.14), hipW: rng.f(0.66, 0.88), torso: rng.f(1.9, 2.25),
                legs: rng.f(1.7, 2.05), waist: rng.f(0.84, 1.16), armW: rng.f(0.16, 0.21) }),
@@ -2242,7 +2280,7 @@
     const footY = hipY + s * B.legs;
     const aw0 = B.armW;
     const armR = (t) => s * (aw0 - (aw0 - 0.082) * Math.pow(t, 0.75)) * (0.94 + 0.12 * fbm2(t * 3.4, aw0 * 90, 991));
-    const lw0 = B.armW * rng.f(1.02, 1.22);
+    const lw0 = Math.max(0.15, B.armW * rng.f(1.08, 1.3));
     const legR = (t) => s * (lw0 - lw0 * 0.34 * t);
     const pose = clothes.pose;
     const shrug = rng.f(-0.12, 0.16);
@@ -2971,68 +3009,171 @@
     return d;
   }
 
+  // ---------- the person ----------
+  // Everything below used to be forty independent knobs, sampled. That is why
+  // forty faces kept reading as one template however wide the ranges got: a
+  // distribution sampled forty times has a texture, and a person deciding
+  // forty times does not.
+  //
+  // So a character is decided FIRST — how old, how heavy, how they carry
+  // themselves, what mood they are in, how much they care — and every trait
+  // is derived from that. Age reaches the skull, the brow, the hairline, the
+  // mouth, the stoop and the coat all at once, which is what makes a face
+  // read as belonging to somebody.
+  function makePerson(rng) {
+    return {
+      age: rng.pick(["young", "young", "mid", "mid", "mid", "old", "old"]),
+      build: rng.pick(["slight", "ordinary", "ordinary", "heavy", "heavy"]),
+      bearing: rng.pick(["slumped", "neutral", "neutral", "upright", "cocky"]),
+      mood: rng.pick(["dour", "blank", "blank", "wary", "pleased", "amused"]),
+      care: rng.pick(["unkempt", "unkempt", "plain", "plain", "groomed"]),
+    };
+  }
+
   function makeDude(rng) {
-    const hairStyles = [
-      "buzz", "buzz", "bowl", "bowl",
-      "spiky", "curly", "side",
-      "comb", "comb", "comb", "comb", "comb", "comb",
-      "thatch", "thatch", "thatch", "thatch",
-      "beanie", "flat", "baseball",
-      "band", "messy",
-      "recede", "recede", "bald", "bald",
-    ];
-    const eyeStyles = ["mix", "mix", "mix", "mix", "mix", "open", "open", "half", "squint", "closed", "bare", "dot", "glasses", "glasses", "shades", "patch", "wink"];
-    const noseStyles = ["long", "long", "long", "hook", "hook", "hook", "tri", "tri", "tri", "button", "button", "blob"];
-    const mouthStyles = ["smile", "smile", "frown", "open", "open", "teeth", "smirk", "lips", "pucker", "line", "line"];
-    const beardStyles = ["none", "none", "none", "stache", "goatee", "beard", "stubble"];
-    const clothesKinds = ["tee", "hoodie", "jacket", "sweater"];
-    const poses = ["down", "down", "pockets", "hips", "folded"];
-    // Value comes from hatching and solid black. The reference sheets have no
-    // fill at all, and a sage shirt under an ink head reads as two media.
-    const washes = [null];
-    const hairColors = ["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"];
-    const skins = [null];
+    const P = makePerson(rng);
+    const old = P.age === "old";
+    const young = P.age === "young";
+    const heavy = P.build === "heavy";
+    const slight = P.build === "slight";
+
+    // --- the skull answers to age and build ---
+    const skull = skullKind(rng);
+    if (heavy) {
+      skull.ratio *= rng.f(1.08, 1.2);
+      skull.cheek *= rng.f(1.08, 1.18);
+      skull.jaw *= rng.f(1.05, 1.18);
+      skull.wide = Math.min(0.6, skull.wide + 0.2); // widest low down: jowls
+      skull.pinch *= 0.8;
+    } else if (slight) {
+      skull.ratio *= rng.f(0.84, 0.94);
+      skull.cheek *= rng.f(0.86, 0.96);
+      skull.pinch *= 1.2;
+    }
+    if (old) {
+      skull.chin += rng.f(0.04, 0.12); // the face lengthens
+      skull.jaw *= rng.f(0.9, 1.0); // and the jaw softens
+    } else if (young) {
+      skull.crown *= rng.f(1.04, 1.14); // bigger cranium over a smaller face
+      skull.chin -= rng.f(0.0, 0.06);
+    }
+
+    // keep the compounding in bounds: a heavy multiplier on top of an already
+    // wide archetype was producing pancakes
+    skull.ratio = Math.max(0.72, Math.min(1.34, skull.ratio));
+    skull.cheek = Math.max(0.8, Math.min(1.24, skull.cheek));
+    skull.jaw = Math.max(0.78, Math.min(1.5, skull.jaw));
+    skull.crown = Math.max(0.74, Math.min(1.4, skull.crown));
+
+    // --- how they hold their head ---
+    const pitch =
+      P.bearing === "slumped" ? rng.f(0.06, 0.28)
+      : P.bearing === "cocky" ? rng.f(-0.3, -0.08)
+      : P.bearing === "upright" ? rng.f(-0.16, 0.04)
+      : rng.f(-0.2, 0.2);
+    const roll = P.bearing === "cocky" ? rng.f(-0.18, 0.18) * rng.sign() : rng.f(-0.1, 0.1);
+    const lean =
+      P.bearing === "cocky" ? rng.f(0.16, 0.4) * rng.sign()
+      : P.bearing === "slumped" ? rng.f(-0.12, 0.12)
+      : rng.f(-0.28, 0.28);
+
+    // --- mood reaches the mouth, the brows and the eyes together ---
+    const mouth =
+      P.mood === "dour" ? rng.pick(["frown", "line", "line", "lips"])
+      : P.mood === "pleased" ? rng.pick(["smile", "smile", "teeth"])
+      : P.mood === "amused" ? rng.pick(["smirk", "smile", "teeth", "open"])
+      : P.mood === "wary" ? rng.pick(["line", "pucker", "smirk"])
+      : rng.pick(["line", "open", "pucker", "smile"]);
+    const brows =
+      P.mood === "dour" ? rng.pick(["angry", "angry", "flat"])
+      : P.mood === "wary" ? rng.pick(["angry", "arch"])
+      : P.mood === "amused" ? rng.pick(["arch", "arch", "flat"])
+      : rng.pick(["flat", "arch", "none", "flat"]);
+    let eyes =
+      P.mood === "dour" ? rng.pick(["half", "squint", "mix"])
+      : P.mood === "amused" ? rng.pick(["mix", "wink", "closed", "open"])
+      : P.mood === "wary" ? rng.pick(["squint", "half", "mix"])
+      : rng.pick(["mix", "mix", "open", "bare", "dot"]);
+    if (rng.chance(old ? 0.3 : 0.16)) eyes = "glasses";
+    else if (rng.chance(0.07)) eyes = rng.pick(["shades", "patch"]);
+
+    // --- age and care decide the hair, together ---
+    let hair;
+    if (old) {
+      hair = rng.pick(["recede", "recede", "bald", "bald", "comb", "flat", "band", "buzz"]);
+    } else if (young) {
+      hair = rng.pick(["spiky", "messy", "thatch", "thatch", "bowl", "curly", "beanie", "baseball", "comb"]);
+    } else {
+      hair = rng.pick(["comb", "comb", "thatch", "side", "buzz", "bowl", "flat", "baseball", "beanie", "curly"]);
+    }
+    if (P.care === "groomed" && (hair === "messy" || hair === "thatch")) hair = rng.pick(["comb", "side", "flat"]);
+    if (P.care === "unkempt" && (hair === "comb" || hair === "flat")) hair = rng.pick(["messy", "thatch", "spiky"]);
+
+    const beard =
+      P.care === "unkempt" ? rng.pick(["stubble", "beard", "beard", "stache", "none"])
+      : P.care === "groomed" ? rng.pick(["none", "none", "none", "stache", "goatee"])
+      : rng.pick(["none", "none", "stubble", "stache", "goatee", "beard"]);
+
+    // --- and what they are wearing ---
+    const kind =
+      old ? rng.pick(["jacket", "jacket", "sweater", "sweater", "tee"])
+      : young ? rng.pick(["tee", "tee", "hoodie", "hoodie", "jacket"])
+      : rng.pick(["tee", "hoodie", "jacket", "sweater"]);
+    const pose =
+      P.bearing === "cocky" ? rng.pick(["hips", "hips", "pockets"])
+      : P.bearing === "slumped" ? rng.pick(["pockets", "down", "folded"])
+      : rng.pick(["down", "down", "pockets", "hips", "folded"]);
 
     return applyQuirk({
+      person: P,
       name: rng.chance(0.55) ? rng.pick(FIRST) : `${rng.pick(FIRST)} ${rng.pick(LAST)}`,
       yaw: rng.f(-0.75, 0.75),
-      pitch: rng.f(-0.28, 0.28),
-      roll: rng.f(-0.12, 0.12),
+      pitch,
+      roll,
+      lean,
       depth: rng.f(1.05, 1.5),
-      lean: rng.f(-0.35, 0.35),
-      size: rng.f(102, 122),
-      hair: rng.pick(hairStyles),
-      hairColor: rng.pick(hairColors),
-      eyes: rng.pick(eyeStyles),
-      nose: rng.pick(noseStyles),
-      noseHeavy: rng.f(1.15, 1.9),
-      mouth: rng.pick(mouthStyles),
-      beard: rng.pick(beardStyles),
-      skin: rng.pick(skins),
+      size: rng.f(102, 122) * (slight ? 0.96 : heavy ? 1.03 : 1),
+      hair,
+      hairColor: rng.pick(["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"]),
+      eyes,
+      nose: rng.pick(
+        old ? ["long", "hook", "hook", "blob", "blob", "tri"]
+        : young ? ["button", "button", "tri", "long", "blob"]
+        : ["long", "long", "hook", "hook", "tri", "tri", "button", "blob"]
+      ),
+      noseHeavy: rng.f(1.15, 1.9) * (old ? rng.f(1.08, 1.25) : young ? rng.f(0.85, 0.98) : 1),
+      mouth,
+      beard,
+      skin: null,
       clothes: {
-        kind: rng.pick(clothesKinds),
-        pose: rng.pick(poses),
-        wash: rng.pick(washes),
-        pattern: rng.pick([null, null, null, "stripe", "stripe", "vstripe", "dark"]),
+        kind,
+        pose,
+        wash: null,
+        pattern: rng.pick(
+          P.care === "groomed" ? [null, null, "stripe", "dark"]
+          : [null, null, null, "stripe", "stripe", "vstripe", "dark"]
+        ),
         darkLegs: rng.chance(0.3),
       },
-      ...skullKind(rng),
-      faceY: rng.f(-0.05, 0.17),
+      ...skull,
+      // the feature band rides low on a long old face, high on a young one
+      faceY: rng.f(-0.05, 0.17) + (old ? rng.f(0.0, 0.06) : young ? rng.f(-0.06, 0.0) : 0),
       gaze: rng.f(-1, 1),
-      eyeGap: rng.f(0.27, 0.46),
+      eyeGap: rng.f(0.27, 0.46) * (heavy ? rng.f(1.0, 1.12) : 1),
       lobeA: rng.pick([2, 3, 3, 4, 5]),
       lobeB: rng.pick([5, 6, 7, 8, 9]),
-      lobeAmp: rng.f(0.03, 0.085),
-      brow: rng.chance(0.42) ? rng.f(0.05, 0.13) : 0,
-      jawAngle: rng.chance(0.86) ? rng.f(0.26, 0.82) : 0,
+      lobeAmp: rng.f(0.03, 0.085) * (old ? 1.25 : 1), // an older head is lumpier
+      brow: (old || P.mood === "dour") && rng.chance(0.6) ? rng.f(0.07, 0.16) : rng.chance(0.3) ? rng.f(0.05, 0.11) : 0,
+      jawAngle: rng.chance(0.86) ? rng.f(0.26, 0.82) * (heavy ? 1.15 : 1) : 0,
       jawHigh: rng.f(-0.16, 0.2),
-      jawTaper: rng.f(0.58, 1.05),
+      jawTaper: rng.f(0.58, 1.05) * (heavy ? rng.f(1.05, 1.2) : slight ? rng.f(0.85, 0.95) : 1),
       chinX: rng.f(-0.16, 0.16),
+      chinW: rng.f(0.06, 0.34),
       lobePh: rng.f(0, Math.PI * 2),
       flat: rng.chance(0.55) ? rng.f(0.05, 0.14) : 0,
       flatA: rng.f(-Math.PI, Math.PI),
       pen: rng.f(0.9, 1.22),
-      brows: rng.pick(["flat", "arch", "angry", "flat", "none", "arch"]),
+      brows,
     }, rng);
   }
 
@@ -3061,6 +3202,7 @@
       jawHigh: dude.jawHigh,
       jawTaper: dude.jawTaper,
       chinX: dude.chinX,
+      chinW: dude.chinW,
     });
     skull.pen = dude.pen;
     skull.faceY = dude.faceY;
@@ -3085,7 +3227,7 @@
     let nameY;
     if (spot === "feet") {
       nameX = cx + s * rng.f(-1.4, 0.5);
-      nameY = Math.min(h - size * 1.5, body.footY + s * rng.f(0.3, 0.75));
+      nameY = Math.min(h - size * 2.1, body.footY + s * rng.f(0.28, 0.7));
     } else if (spot === "shoulder") {
       nameX = Math.max(body.maxX + s * rng.f(0.14, 0.4), cx + s * 1.35);
       nameY = cy + s * rng.f(1.6, 2.4);
@@ -3102,7 +3244,7 @@
     if (spot !== "feet" && nameX + nameW > w - 12) {
       // no room in the margin, so it goes under the feet
       nameX = Math.max(16, cx + s * rng.f(-1.4, 0.3));
-      nameY = Math.min(h - size * 1.5, body.footY + s * rng.f(0.3, 0.75));
+      nameY = Math.min(h - size * 2.1, body.footY + s * rng.f(0.28, 0.7));
     }
     nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
@@ -3128,14 +3270,14 @@
         const rng = new Rng((seed0 + (r * cols + col) * 7919) >>> 0);
         const d = makeDude(rng);
         const s = Math.min(cw, ch) * rng.f(0.27, 0.37) * rowS;
-        const cx = cw * (col + 0.5) + rowDx + rng.f(-7, 7);
-        const cy = 18 + ch * (r + 0.5) + rowDy + rng.f(-8, 8);
+        const cx = Math.max(s * 1.15, Math.min(w - s * 1.15, cw * (col + 0.5) + rowDx + rng.f(-7, 7)));
+        const cy = Math.max(s * 1.2, Math.min(h - s * 1.3, 18 + ch * (r + 0.5) + rowDy + rng.f(-8, 8)));
         const skull = new Skull(cx, cy, s, d.yaw, d.pitch, d.roll, d.ratio, d.depth, {
           jaw: d.jaw, chin: d.chin, crown: d.crown, cheek: d.cheek,
           lobeA: d.lobeA, lobeB: d.lobeB, lobeAmp: d.lobeAmp, lobePh: d.lobePh,
           flat: d.flat, flatA: d.flatA,
           wide: d.wide, pinch: d.pinch, skewW: d.skewW, brow: d.brow,
-          jawAngle: d.jawAngle, jawHigh: d.jawHigh, jawTaper: d.jawTaper, chinX: d.chinX,
+          jawAngle: d.jawAngle, jawHigh: d.jawHigh, jawTaper: d.jawTaper, chinX: d.chinX, chinW: d.chinW,
         });
         skull.pen = d.pen;
         skull.faceY = d.faceY;
