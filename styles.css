@@ -1,6 +1,6 @@
 :root {
-  --paper: #ebe3d2;
-  --ink: #1b1712;
+  --paper: #dfdacf;
+  --ink: #232019;
 }
 
 * { box-sizing: border-box; }
@@ -51,12 +51,15 @@ body {
   appearance: none;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--ink);
-  color: var(--ink);
-  font: italic 17px/1.2 Georgia, "Times New Roman", serif;
-  letter-spacing: 0.03em;
-  padding: 4px 2px 3px;
+  padding: 0;
+  line-height: 0;
   cursor: pointer;
+}
+
+#btnink {
+  display: block;
+  width: 150px;
+  height: 24px;
 }
 
 #another:hover { opacity: 0.7; }
@@ -67,6 +70,5 @@ body {
 }
 
 @media (max-width: 640px) {
-  #another { font-size: 16px; }
   #page { height: calc(100dvh - 60px); }
 }

@@ -1,87 +1,71 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gauntlet — dudes</title>
-  <style>
-    :root { color-scheme: dark; }
-    body {
-      margin: 0;
-      background: #141210;
-      color: #e8e0d4;
-      font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
-      padding: 32px 24px 80px;
-      max-width: 920px;
-    }
-    h1 { font-size: 22px; font-weight: 600; margin: 0 0 8px; }
-    .sub { color: #9a9084; margin: 0 0 28px; }
-    h2 { font-size: 15px; letter-spacing: 0.04em; text-transform: uppercase; color: #c4b8a8; margin: 36px 0 12px; }
-    .shot { background: #1c1916; border: 1px solid #2e2924; border-radius: 8px; padding: 10px; margin: 12px 0; }
-    .shot img { width: 100%; height: auto; display: block; border-radius: 4px; background: #efe6d6; }
-    .shot figcaption { color: #9a9084; font-size: 13px; margin-top: 8px; }
-    ul { padding-left: 1.2em; }
-    li { margin: 0.35em 0; }
-    a { color: #e8c4a0; }
-    code { font-size: 0.92em; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>a dude — progress</title>
+<style>
+  :root { --paper:#dfdacf; --ink:#232019; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+         font:15px/1.55 ui-serif, Georgia, serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 22px 90px; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 44px 0 10px; }
+  p.lede { margin: 0 0 30px; opacity: .75; }
+  .grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fill, minmax(210px,1fr)); }
+  .grid img { width:100%; display:block; border:1px solid rgba(35,32,25,.18); }
+  .pair { display:grid; gap:16px; grid-template-columns: 1fr 1fr; align-items:start; }
+  .pair img { width:100%; display:block; border:1px solid rgba(35,32,25,.18); }
+  figcaption { font-size:12.5px; opacity:.65; padding-top:5px; }
+  ol { padding-left: 20px; }
+  li { margin-bottom: 9px; }
+  code { background: rgba(35,32,25,.07); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  .note { border-left: 2px solid rgba(35,32,25,.3); padding-left: 14px; opacity:.8; }
+</style>
 </head>
 <body>
-  <h1>Gauntlet loop — dudes</h1>
-  <p class="sub">Bar: Mannay’s coding-doodle plates in <code>refs/</code>. Goal: one dude, a body, a pen-and-ink name, a button that draws another.</p>
+<main>
+  <h1>a dude — progress</h1>
+  <p class="lede">Canvas 2D. One dude per click, drawn on a hidden 3D skull. The bar is Mannay's plates in <code>refs/</code>.</p>
 
-  <h2>Bar</h2>
+  <h2>Plate mode — like for like</h2>
+  <p class="note">The fairest test is a sheet against a sheet. <code>index.html?plate=1</code> renders 48 heads on one page, the same format as the reference plates. Ours on the left, Mannay on the right.</p>
+  <div class="pair">
+    <figure style="margin:0"><img src="progress/shots/plate-2026.png" alt="our plate" /><figcaption>ours — <code>?plate=1&amp;s=2026</code></figcaption></figure>
+    <figure style="margin:0"><img src="refs/mannay-sheet-1.jpg" alt="reference plate" /><figcaption>Mannay, sheet 1</figcaption></figure>
+  </div>
+
+  <h2>Full dudes</h2>
+  <div class="grid">
+    <figure style="margin:0"><img src="progress/shots/s42.png" alt="seed 42" /><figcaption>s=42</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s777.png" alt="seed 777" /><figcaption>s=777</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s1107.png" alt="seed 1107" /><figcaption>s=1107</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s2026.png" alt="seed 2026" /><figcaption>s=2026</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s4929.png" alt="seed 4929" /><figcaption>s=4929</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s88.png" alt="seed 88" /><figcaption>s=88</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s333.png" alt="seed 333" /><figcaption>s=333</figcaption></figure>
+    <figure style="margin:0"><img src="progress/shots/s1500.png" alt="seed 1500" /><figcaption>s=1500</figcaption></figure>
+  </div>
+
+  <h2>This round — what actually changed</h2>
+  <p class="note">The previous round lost 5–0 and the note from the critics was: stop adding geometry, change how the marks look. So nothing new was layered on. Six things were replaced.</p>
+  <ol>
+    <li><strong>The nib.</strong> Strokes were butt-capped line segments at partial alpha, which is why everything read grey and seamed. A stroke is now a <em>filled</em> variable-width ribbon at full opacity — a solid wet core with loose filaments down each flank that catch and drop out on their own. Width comes from two octaves of pressure noise, ink pools at starts, stops and hard corners, and the nib lifts briefly where the paper tooth is high. Thin strokes skip more than fat ones.</li>
+    <li><strong>Doubled contours.</strong> Every head in the reference plates is two lines that touch and part, not one. <code>doubled</code> traces the whole contour a second time at a drifting offset.</li>
+    <li><strong>Hair owns the crown.</strong> It used to be a cap shape parked on top of the skull — a toupee. A mass is now built from two edges: a hairline pinned across the face, and <em>the skull's own silhouette above it</em>, pushed outward by the thickness of the hair. The head outline can no longer show through, and the mass wraps whatever the skull does under yaw. Combed and ribbed variants run stroke-by-stroke from the outer edge down to the hairline without crossing.</li>
+    <li><strong>Lumpy skulls.</strong> The outline was a convex hull, which can only ever be an egg. It is now the radial extent of the projected skull plus a per-seed lump profile on integer harmonics, so it can dent inward, and one optional flattened facet — a squared temple, a cut-off jaw.</li>
+    <li><strong>One heavy nose.</strong> Built on the face's projected vertical axis rather than raw 3D points, so it rides the skull through a turn instead of walking across the cheek. One unbroken run from between the brows to the tip, turning under into the nostril, at up to 1.5× the weight of anything else on the face.</li>
+    <li><strong>The body is drawn, not assembled.</strong> Gone: trapezoid chassis, ribbon tubes. The figure is one continuous silhouette — neck, shoulders, sides, legs, round the shoes — with the arms as their own shapes laid in front of it. Clothes cut into that: necklines, hems, cuffs, plackets, stripes clipped to the body.</li>
+  </ol>
+  <p>Plus: every pen weight now scales with head size (small heads were reading as blobs), features are clamped inside the silhouette so nothing slides off on a hard turn, and the <em>another dude</em> button is written in the same ink as the drawing instead of typeset Georgia.</p>
+
+  <h2>Still open</h2>
   <ul>
-    <li>Original sheets: <code>refs/mannay-sheet-*.jpg</code>, <code>refs/mannay-moar-*.jpg</code></li>
-    <li>Large close-ups: <code>refs/mannay-faces-1.jpg</code>, <code>images/IMG_5220–5227</code></li>
-    <li>Construction: every feature is a function; pin to a rough 3D head; naïve ink, not clipart</li>
+    <li>Nose variety — the long one dominates; the reference has more kinds of nose than we do.</li>
+    <li>Hatched hair is lighter than the reference's.</li>
+    <li>Mouths are still mostly a horizontal dash.</li>
+    <li>The body has no reference plate to be judged against, so it is judged on its own terms.</li>
   </ul>
-
-  <h2>Rounds</h2>
-  <p>v2 — 3D skull (yaw / pitch / roll) after reading the lab video. Features stay on the head when it turns. Body and ink still lose to the plates.</p>
-  <figure class="shot">
-    <img src="progress/v2.png" alt="Otto, 3/4 view" />
-    <figcaption>v2 — Otto. Nose and ear follow the turn.</figcaption>
-  </figure>
-  <figure class="shot">
-    <img src="progress/v2b.png" alt="Gus Moss, turned head" />
-    <figcaption>v2 — Gus Moss. Same skull, different seed.</figcaption>
-  </figure>
-
-  <h2>This run</h2>
-  <p>Six seeds against the Mannay plates. The critic scored five pieces (ink, hair/hats, head, body, name). <strong>Refs still won 5 / 5.</strong> No piece flipped. v2 / v2b stay on the page as the obsolete stick-figure baseline.</p>
-  <ul>
-    <li><strong>Ink</strong> — still short butt-capped fBm polylines on a flat cream (hash-noise <code>grainPass</code>, opaque polygon fills) rather than a dry nib that skips and pools inside real paper tooth. Cause: <code>dude.js</code> <code>inkLine</code> (~w butt segments, 0.32px fBm) plus <code>grainPass</code>.</li>
-    <li><strong>Hair / hats</strong> — still fail to wrap the 3D skull as dark filled masses that replace the crown silhouette. They read as empty scalps, temple stickers, toupees, or thimble-hats perched on the oval.</li>
-    <li><strong>Head</strong> — every seed is still the same 7%-jittered ellipsoid with traits stamped on, not a lumpy seed-specific oval owned by one heavy dry brow-to-tip nose.</li>
-    <li><strong>Body</strong> — every body is still the same trapezoid chassis with parallel-offset ribbon tubes for limbs, so it reads as a robot kit rather than a few naïve ink contours. <code>drawBody</code> builds a 10-point torso then <code>ribbon()</code> offsets a 3-point spine; <code>clothes.kind</code> only adds ticks.</li>
-    <li><strong>Name</strong> — jittered all-caps typeface (forced uppercase geometric glyphs, even tracking, same cheek-height stamp) rather than a dry-ink note. The leftover Georgia italic “another dude” button is typeset chrome that does not share that ink.</li>
-  </ul>
-
-  <p>Shots from this run:</p>
-  <figure class="shot">
-    <img src="progress/shots/s42.png" alt="Ulf Kane, seed 42" />
-    <figcaption><a href="progress/shots/s42.png">s42.png</a> — Ulf Kane. Regular egg, flat black trapezoid bowl with speckle holes, two identical dots. Hexagon torso + belly oval.</figcaption>
-  </figure>
-  <figure class="shot">
-    <img src="progress/shots/s1107.png" alt="Otto, seed 1107" />
-    <figcaption><a href="progress/shots/s1107.png">s1107.png</a> — Otto. Yaws, but equal un-foreshortened dots and a diagonal nose walking the cheek; hair is two parallelogram stickers. Hexagon torso, tube legs. OTTO as twin T’s on the mouth.</figcaption>
-  </figure>
-  <figure class="shot">
-    <img src="progress/shots/s777.png" alt="Gus Moss, seed 777" />
-    <figcaption><a href="progress/shots/s777.png">s777.png</a> — Gus Moss. Even-parallel hat hatch on a small cylinder with a bald ring around it. Closed triangle nose. Green trapezoid, hands-on-hips diamond arms. GUS MOSS in even display caps.</figcaption>
-  </figure>
-  <figure class="shot">
-    <img src="progress/shots/s2026.png" alt="Mo, seed 2026" />
-    <figcaption><a href="progress/shots/s2026.png">s2026.png</a> — Mo. Smooth egg, toupee patch that stops inside the oval, even circle glasses. Same green trapezoid chassis on dead cream grain.</figcaption>
-  </figure>
-  <figure class="shot">
-    <img src="progress/shots/s4929.png" alt="Walt, seed 4929" />
-    <figcaption><a href="progress/shots/s4929.png">s4929.png</a> — Walt. Thin band on a bald crown, stamped closed-triangle nose, same green trapezoid + diamond arms.</figcaption>
-  </figure>
-  <figure class="shot">
-    <img src="progress/shots/s88.png" alt="Jules Nash, seed 88" />
-    <figcaption><a href="progress/shots/s88.png">s88.png</a> — Jules Nash. Only pointed chin in the set; still a thin polyline nose under a dusty toupee cap. Hexagon torso. JULES NASH has the only lively underline, letters still on a ruler.</figcaption>
-  </figure>
+</main>
 </body>
 </html>
