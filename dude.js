@@ -1111,8 +1111,9 @@
     const a = front[0];
     const b = front[front.length - 1];
     const puff = (opt.puff ?? 0.05) * skull.s;
-    const top = crownArc(skull, hull, a, b, puff, rng);
+    let top = crownArc(skull, hull, a, b, puff, rng);
     if (top.length < 2) return null;
+    top = outerProfile(top, skull, rng, opt);
     return { front, top, mass: front.concat(top) };
   }
 
@@ -1141,6 +1142,70 @@
     }
     if (!best || best.a.length < 3) return null;
     return { hi: best.a, lo: best.b, poly: best.a.concat(best.b.slice().reverse()) };
+  }
+
+  // Every mass so far was a hairline plus the skull arc pushed outward — one
+  // topology, so the outer edge was always a scaled copy of the cranium and
+  // the caps read as one shape however the parameters moved. These reshape
+  // the outer edge itself, which is the part that reads at grid scale.
+  function outerProfile(top, skull, rng, opt) {
+    const kind = opt.outer ?? rng.pick(["skull", "skull", "quiff", "flattop", "dome", "wedge", "wedge", "sweep"]);
+    if (kind === "skull") return top;
+    const n = top.length;
+    const s = skull.s;
+    const push = (p, amt) => {
+      const ox = p.x - skull.cx;
+      const oy = p.y - skull.cy;
+      const d = Math.hypot(ox, oy) || 1;
+      return { x: skull.cx + (ox / d) * (d + amt), y: skull.cy + (oy / d) * (d + amt) };
+    };
+    if (kind === "quiff") {
+      // piled up over one temple and falling away
+      const at = rng.f(0.12, 0.42);
+      const w = rng.f(0.1, 0.3);
+      const h = s * rng.f(0.16, 0.42);
+      return top.map((p, i) => {
+        const t = i / (n - 1 || 1);
+        const g = Math.exp(-Math.pow((t - at) / w, 2));
+        return push(p, h * g);
+      });
+    }
+    if (kind === "wedge") {
+      // rising steadily from one temple to the other
+      const h = s * rng.f(0.1, 0.32) * (rng.chance(0.5) ? 1 : -1);
+      return top.map((p, i) => {
+        const t = i / (n - 1 || 1);
+        return push(p, h * Math.sin(t * Math.PI * 0.5 + (h < 0 ? Math.PI * 0.5 : 0)));
+      });
+    }
+    if (kind === "dome") {
+      // volume all round, falling off at the temples
+      const h = s * rng.f(0.14, 0.4);
+      return top.map((p, i) => {
+        const t = i / (n - 1 || 1);
+        return push(p, h * Math.sin(t * Math.PI));
+      });
+    }
+    if (kind === "sweep") {
+      // combed hard to one side: long over one temple, cropped at the other
+      const dir = rng.chance(0.5) ? 1 : -1;
+      const h = s * rng.f(0.12, 0.34);
+      return top.map((p, i) => {
+        const t = i / (n - 1 || 1);
+        const u = dir > 0 ? t : 1 - t;
+        return push(p, h * Math.pow(u, 1.8));
+      });
+    }
+    // flattop: cut off square across the crown
+    let minY = Infinity;
+    for (const p of top) if (p.y < minY) minY = p.y;
+    const cut = minY + s * rng.f(-0.12, 0.06);
+    const tilt = rng.f(-0.12, 0.12);
+    return top.map((p, i) => {
+      const t = i / (n - 1 || 1);
+      const line = cut + (t - 0.5) * s * tilt;
+      return p.y > line ? p : { x: p.x, y: line + rng.f(-1, 1) };
+    });
   }
 
   function hairlineRing(skull, hl, wrap = 0.92) {
@@ -1479,7 +1544,7 @@
     }
 
     if (style === "beanie") {
-      const h = mk({ lineY: -0.44, bangs: 0.03, puff: 0.2, wob: 0.015 });
+      const h = mk({ lineY: -0.44, bangs: 0.03, puff: 0.2, wob: 0.015, outer: "dome" });
       if (h) {
         inkMassFill(c, rng, h.mass, color, { bite: s * 0.028 });
         // knit ribbing runs with the dome, not straight down
@@ -1501,7 +1566,7 @@
     }
 
     if (style === "flat") {
-      const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02 });
+      const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02, outer: "flattop" });
       if (h) {
         inkMass(c, rng, h, color, { strays: 0, rag: 1.1, edge: 3.2 });
         const bL = pinOut(skull, { x: -0.5, y: -0.3, z: 0.78 });
@@ -1516,7 +1581,7 @@
     }
 
     if (style === "baseball") {
-      const h = mk({ lineY: -0.44, puff: 0.15, wob: 0.015 });
+      const h = mk({ lineY: -0.44, puff: 0.15, wob: 0.015, outer: "dome" });
       if (h) {
         inkFill(c, rng, h.mass, color, 0.34, s * 0.01);
         c.save();
@@ -2323,11 +2388,24 @@
     // moved 1.56x and the legs 1.85x. A garment belongs to its torso.
     const hemY = shY + (hipY - shY) * rng.f(0.82, 1.34);
     const sleeveT = rng.f(0.36, 0.66);
+    // A straight rule across the arm at the same place on both sides reads as
+    // the seam where two tubes were butted together, not as a sleeve.
     const cuff = (S, side) => {
-      const i = Math.round(sleeveT * (S.length - 1));
+      if (rng.chance(0.22)) return; // not every sleeve gets marked
+      const t = sleeveT + rng.f(-0.12, 0.12);
+      const i = Math.max(1, Math.min(S.length - 2, Math.round(t * (S.length - 1))));
       const a = edgeOf(S, armR, -1, side < 0 ? 11 : 83)[i];
       const b = edgeOf(S, armR, 1, side < 0 ? 24 : 96)[i];
-      if (a && b) inkLine(c, rng, a.x, a.y, b.x, b.y, s * 0.016);
+      if (!a || !b) return;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const bow = rng.f(-0.35, 0.35);
+      const short = rng.f(0, 0.22);
+      inkPoly(c, rng, [
+        { x: a.x + (b.x - a.x) * short, y: a.y + (b.y - a.y) * short },
+        { x: mx + (b.y - a.y) * bow * 0.3, y: my - (b.x - a.x) * bow * 0.3 },
+        { x: b.x - (b.x - a.x) * rng.f(0, 0.18), y: b.y - (b.y - a.y) * rng.f(0, 0.18) },
+      ], { w: s * rng.f(0.012, 0.02), dry: 0.8, wobble: s * 0.02 });
     };
 
     if (clothes.kind === "tee") {
