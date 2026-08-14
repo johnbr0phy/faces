@@ -1668,15 +1668,68 @@
 
 
   // Fill it black, cut the hairline in hard, let a few hairs escape the top.
+  // Dark does not have to mean filled. Two or three passes of parallel lines
+  // at different angles build a tone that still reads as drawn — and a sheet
+  // where every dark mass is solid black goes heavy and flat very quickly.
+  function crossHatch(c, rng, pts, color, s, opt = {}) {
+    if (!pts || pts.length < 3) return;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const q of pts) {
+      if (q.x < x0) x0 = q.x;
+      if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y;
+      if (q.y > y1) y1 = q.y;
+    }
+    const span = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    c.save();
+    c.beginPath();
+    pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
+    c.closePath();
+    c.clip();
+    const passes = opt.passes ?? rng.i(2, 3);
+    let ang = rng.f(-1.3, -0.3);
+    for (let p = 0; p < passes; p++) {
+      const dx = Math.cos(ang);
+      const dy = Math.sin(ang);
+      const pitch = s * rng.f(0.028, 0.055);
+      for (let k = -span * 0.6; k < span * 0.6; k += pitch * rng.f(0.8, 1.25)) {
+        const mx = cx - dy * k;
+        const my = cy + dx * k;
+        const reach = span * rng.f(0.34, 0.6);
+        nib(c, rng, [
+          { x: mx - dx * reach, y: my - dy * reach },
+          { x: mx + dx * reach * rng.f(0.8, 1.05), y: my + dy * reach * rng.f(0.8, 1.05) },
+        ], { w: s * rng.f(0.012, 0.024), color, dry: 0.8, wobble: s * 0.012 });
+      }
+      // the next pass crosses the last at a real angle, not a nudge
+      ang += rng.f(0.7, 1.35) * (rng.chance(0.5) ? 1 : -1);
+    }
+    c.restore();
+  }
+
   function inkMass(c, rng, h, color, opt = {}) {
     if (!h) return;
     const { front, top, mass } = h;
     const k = h._s / 100;
+    const tone = opt.tone || "solid";
     // The hairline is a decision — a clean, committed cut across the face.
     // Only the outer edge is ragged, and only where the hair ends.
-    inkFill(c, rng, mass, color, 1, (opt.rag ?? 2.0) * k * 0.7);
-    loadMass(c, rng, mass, (opt.rag ?? 2.0) * k * 1.6, opt.load ?? rng.f(0.7, 0.88));
-    ragEdge(c, rng, top, h._cx, h._cy, (opt.rag ?? 2.0) * k * 1.5, color);
+    if (tone === "cross") {
+      crossHatch(c, rng, mass, color, h._s, {});
+    } else if (tone === "half") {
+      inkFill(c, rng, mass, color, 0.42, (opt.rag ?? 2.0) * k * 0.7);
+      crossHatch(c, rng, mass, color, h._s, { passes: 2 });
+    } else {
+      inkFill(c, rng, mass, color, 1, (opt.rag ?? 2.0) * k * 0.7);
+      loadMass(c, rng, mass, (opt.rag ?? 2.0) * k * 1.6, opt.load ?? rng.f(0.7, 0.88));
+    }
+    if (tone === "solid") ragEdge(c, rng, top, h._cx, h._cy, (opt.rag ?? 2.0) * k * 1.5, color);
+    else inkPoly(c, rng, top, { w: 1.4 * k, dry: 1.3 });
     inkPoly(c, rng, front, { w: (opt.edge ?? 2.5) * k, dry: 0.5 });
     capBreaks(c, rng, h, color, opt);
     strayHairs(c, rng, h, opt);
@@ -1899,7 +1952,7 @@
   // lock hanging over the brow belongs in FRONT, and was being overpainted by
   // the eyes and brows that came after it. Those go into `defer` and are
   // flushed once the face is done.
-  function drawHair(c, rng, skull, hull, style, color, defer) {
+  function drawHair(c, rng, skull, hull, style, color, defer, tone) {
     const front = defer || [];
     let lastMass = null;
     const s = skull.s;
@@ -1927,7 +1980,7 @@
     if (style === "recede") {
       // hair only survives at the temples and around the back
       const h = mk({ lineY: -0.56, recede: -0.3, bangs: -0.28, puff: 0.055, wob: 0.03 });
-      if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.5) ? 6 : 0, edge: 2.3 });
+      if (h) inkMass(c, rng, h, color, { tone, strays: rng.chance(0.5) ? 6 : 0, edge: 2.3 });
       return lastMass;
     }
 
@@ -1946,14 +1999,14 @@
 
     if (style === "messy") {
       const h = mk({ lineY: -0.5, bangs: 0.06, puff: 0.15, wob: 0.07 });
-      if (h) inkMass(c, rng, h, color, { strays: 14, strayLen: 1.5, rag: 3.2 });
+      if (h) inkMass(c, rng, h, color, { tone, strays: 14, strayLen: 1.5, rag: 3.2 });
       return lastMass;
     }
 
     if (style === "bowl") {
       const h = mk({ lineY: -0.42, bangs: 0.1, puff: 0.075, wob: 0.025 });
       if (h) {
-        inkMass(c, rng, h, color, { strays: 5, rag: 1.4, edge: 2.8 });
+        inkMass(c, rng, h, color, { tone, strays: 5, rag: 1.4, edge: 2.8 });
         // the fringe hangs in points off the cut line
         for (let i = 2; i < h.front.length - 2; i += 2) {
           const p = h.front[i];
@@ -1967,7 +2020,7 @@
     if (style === "spiky") {
       const h = mk({ lineY: -0.5, puff: 0.04, wob: 0.04 });
       if (h) {
-        inkMass(c, rng, h, color, { strays: 0 });
+        inkMass(c, rng, h, color, { tone, strays: 0 });
         for (let i = 0; i < h.top.length; i += 1) {
           const q = h.top[i];
           const ox = q.x - skull.cx;
@@ -2026,7 +2079,7 @@
     if (style === "side") {
       const dir = rng.sign();
       const h = mk({ lineY: -0.5, recede: 0.11, bangs: 0.04, sideBias: dir * 0.26, puff: 0.1, wob: 0.05 });
-      if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.55) ? 8 : 0, strayLen: 1.2 });
+      if (h) inkMass(c, rng, h, color, { tone, strays: rng.chance(0.55) ? 8 : 0, strayLen: 1.2 });
       return lastMass;
     }
 
@@ -2055,7 +2108,7 @@
     if (style === "flat") {
       const h = mk({ lineY: -0.46, bangs: 0.02, puff: 0.09, wob: 0.02, outer: "flattop", areaCap: 0.58 });
       if (h) {
-        inkMass(c, rng, h, color, { strays: 0, rag: 1.1, edge: 3.2 });
+        inkMass(c, rng, h, color, { tone, strays: 0, rag: 1.1, edge: 3.2 });
         const brim = brimPts(skull, h, rng.f(0.3, 0.62), rng);
         if (brim) {
           front.push(() => {
@@ -2099,7 +2152,7 @@
     if (style === "band") {
       // hair first, then a band cutting across it
       const h = mk({ lineY: -0.5, puff: 0.09, wob: 0.05 });
-      if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.5) ? 7 : 0, strayLen: 1.3 });
+      if (h) inkMass(c, rng, h, color, { tone, strays: rng.chance(0.5) ? 7 : 0, strayLen: 1.3 });
       // Both edges must be sampled over the SAME visible span. Culling each
       // ring independently by depth leaves them ending at different places,
       // and the polygon built from the two crosses itself and floods the face.
@@ -2113,7 +2166,7 @@
     }
 
     const h = mk({ lineY: -0.5, puff: 0.095, wob: 0.05 });
-    if (h) inkMass(c, rng, h, color, { strays: rng.chance(0.5) ? 6 : 0 });
+    if (h) inkMass(c, rng, h, color, { tone, strays: rng.chance(0.5) ? 6 : 0 });
     return lastMass;
   }
 
@@ -3920,6 +3973,7 @@
       depth: rng.f(1.05, 1.5),
       size: rng.f(102, 122) * (slight ? 0.96 : heavy ? 1.03 : 1),
       hair,
+      hairTone: rng.pick(["solid", "solid", "cross", "cross", "half"]),
       hairColor: rng.pick(["#1a1712", "#211c16", "#181614", "#2a2218", "#1c1a16"]),
       eyes,
       nose: rng.pick(
@@ -4024,7 +4078,7 @@
     const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
     headOutline(c, rng, skull, hull, gaps);
     const inFront = [];
-    const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront);
+    const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront, dude.hairTone);
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
     // beard first: a filled mass drawn after the mouth swallows it
@@ -4471,7 +4525,7 @@
         const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
         headOutline(c, rng, skull, hull, gaps);
         const inFront = [];
-        const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront);
+        const hairMassPts = drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront, d.hairTone);
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
         drawFacialHair(c, rng, skull, d.beard);
