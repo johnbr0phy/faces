@@ -908,8 +908,8 @@
     const w0 = skull.s * 0.03 * (skull.pen || 1);
     const cranium = arc(-ov, Math.round(n * 0.5) + ov);
     const jaw = arc(Math.round(n * 0.5) - ov, n + ov);
-    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.88, 1.05), dry: 0.3, doubled: rng.chance(0.35) });
-    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.15, 1.45), dry: 0.22, doubled: rng.chance(0.42) });
+    inkPoly(c, rng, cranium, { w: w0 * rng.f(0.82, 1.0), dry: 0.3, doubled: rng.chance(0.35) });
+    inkPoly(c, rng, jaw, { w: w0 * rng.f(1.45, 1.95), dry: 0.2, doubled: rng.chance(0.45) });
     if (rng.chance(0.35)) {
       // a cheek restated on one side only
       const a0 = Math.round(n * rng.f(0.02, 0.12));
@@ -1026,7 +1026,10 @@
       else if (sh === "jagged") y += (Math.round(Math.sin(u * 4.7 + 1.3) * 2) / 2) * 0.07;
       else if (sh === "low") y += 0.07 - temple * 0.03;
       y += (fbm2(u * 1.6 + 4, skull.yaw * 2 + (rng.seed % 53) * 0.07, rng.seed) - 0.5) * wob * 2;
-      y = clamp(y, -0.95, 0.08);
+      // Hair may sit low on the brow; it may not cross the eyes. A side sweep
+      // plus a side bias could put the hairline at eye level on one side, and
+      // the mass then read as a black bar laid across the face.
+      y = clamp(y, -0.95, -0.2 + (skull.faceY || 0));
       const p = pin(skull, sphere(u, Math.asin(clamp(y, -0.995, 0.995))));
       pts.push(p);
     }
@@ -1498,6 +1501,8 @@
     if (style === "curly") {
       const h = mk({ lineY: -0.5, bangs: 0.03, puff: 0.09, wob: 0.05 });
       if (h) {
+        inkFill(c, rng, h.mass, PAPER, 1, s * 0.012);
+        refibre(c, rng, h.mass);
         // a wreath of loops, clipped so it never floats off the head
         c.save();
         c.beginPath();
@@ -1583,6 +1588,10 @@
     if (style === "baseball") {
       const h = mk({ lineY: -0.44, puff: 0.15, wob: 0.015, outer: "dome" });
       if (h) {
+        // wipe first: a fill at a third opacity leaves the skull line showing
+        // straight through the hat
+        inkFill(c, rng, h.mass, PAPER, 1, s * 0.01);
+        refibre(c, rng, h.mass);
         inkFill(c, rng, h.mass, color, 0.34, s * 0.01);
         c.save();
         c.beginPath();
@@ -2155,7 +2164,8 @@
     const lw0 = B.armW * rng.f(1.02, 1.22);
     const legR = (t) => s * (lw0 - lw0 * 0.34 * t);
     const pose = clothes.pose;
-    const shrug = rng.f(-0.06, 0.1);
+    const shrug = rng.f(-0.12, 0.16);
+    const slope = rng.f(-0.14, 0.26); // square shoulders through to sloping
     // no two sides of a drawn person agree
     const asymL = rng.f(0.86, 1.14);
     const asymR = rng.f(0.86, 1.14);
@@ -2184,11 +2194,13 @@
         return [sh, P(side * (shW + s * 0.14), shY + s * 0.62), P(-side * s * 0.16, shY + s * 0.95)];
       }
       // hanging
+      // the hang is not vertical on everyone: some swing out, some tuck in
       const a = asym(side);
+      const swing = rng.f(-0.16, 0.24);
       return [
         sh,
-        P(side * (shW + s * rng.f(0.02, 0.13)) * a, shY + s * rng.f(0.72, 0.92) * a),
-        P(side * (shW + s * rng.f(-0.02, 0.2)) * a, shY + s * rng.f(1.5, 1.78) * a),
+        P(side * (shW + s * (rng.f(0.02, 0.13) + swing * 0.4)) * a, shY + s * rng.f(0.66, 0.96) * a),
+        P(side * (shW + s * (rng.f(-0.02, 0.2) + swing)) * a, shY + s * rng.f(1.42, 1.86) * a),
       ];
     };
 
@@ -2227,8 +2239,8 @@
     // ---- one continuous silhouette ----
     const neckL = P(-s * rng.f(0.15, 0.21), neckY - s * 0.42);
     const neckR = P(s * rng.f(0.15, 0.21), neckY - s * 0.42);
-    const shoulderL = P(-shW * asymL, shY + s * shrug * -1);
-    const shoulderR = P(shW * asymR, shY + s * shrug + s * rng.f(-0.06, 0.06));
+    const shoulderL = P(-shW * asymL, shY + s * (slope - shrug));
+    const shoulderR = P(shW * asymR, shY + s * (slope + shrug) + s * rng.f(-0.06, 0.06));
     // a belly, or a pinch, or neither — and it is not at the same height twice
     const waistY = shY + (hipY - shY) * rng.f(0.42, 0.68);
     const midW = (shW + hipW) * 0.5 * B.waist;
@@ -2360,26 +2372,29 @@
     const bw = s * 0.034 * rng.f(0.92, 1.12);
     const wob = s * rng.f(0.035, 0.06);
     inkPoly(c, rng, core, { closed: true, w: bw, doubled: true, dry: 0.6, wobble: wob });
-    // the arm sits in front of the body, so it hides the line behind it
-    inkFill(c, rng, Larm, clothes.wash || PAPER, clothes.wash ? 0.22 : 1, 0.8);
-    inkFill(c, rng, Rarm, clothes.wash || PAPER, clothes.wash ? 0.22 : 1, 0.8);
-    refibre(c, rng, Larm);
-    refibre(c, rng, Rarm);
-    inkPoly(c, rng, Larm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
-    inkPoly(c, rng, Rarm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
-    if (pose !== "folded" && pose !== "pockets") {
-      hand(c, rng, LaS, armR(1), -1, s);
-      hand(c, rng, RaS, armR(1), 1, s);
-    } else if (pose === "pockets") {
-      for (let side = -1; side <= 1; side += 2) {
-        const t = side < 0 ? LaS[LaS.length - 1] : RaS[RaS.length - 1];
-        inkPoly(c, rng, [
-          { x: t.x - side * s * 0.22, y: t.y - s * rng.f(0.16, 0.26) },
-          { x: t.x - side * s * 0.06, y: t.y - s * 0.04 },
-          { x: t.x + side * s * rng.f(0.08, 0.16), y: t.y + s * rng.f(0.0, 0.06) },
-        ], { w: s * 0.017, dry: 0.7 });
+    // Arms are drawn LAST, over the finished garment. Drawn before it, every
+    // hem and stripe ran straight across them and the arms read transparent.
+    const drawArms = () => {
+      inkFill(c, rng, Larm, PAPER, 1, 0.8);
+      inkFill(c, rng, Rarm, PAPER, 1, 0.8);
+      refibre(c, rng, Larm);
+      refibre(c, rng, Rarm);
+      inkPoly(c, rng, Larm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
+      inkPoly(c, rng, Rarm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
+      if (pose !== "folded" && pose !== "pockets") {
+        hand(c, rng, LaS, armR(1), -1, s);
+        hand(c, rng, RaS, armR(1), 1, s);
+      } else if (pose === "pockets") {
+        for (let side = -1; side <= 1; side += 2) {
+          const t = side < 0 ? LaS[LaS.length - 1] : RaS[RaS.length - 1];
+          inkPoly(c, rng, [
+            { x: t.x - side * s * 0.22, y: t.y - s * rng.f(0.16, 0.26) },
+            { x: t.x - side * s * 0.06, y: t.y - s * 0.04 },
+            { x: t.x + side * s * rng.f(0.08, 0.16), y: t.y + s * rng.f(0.0, 0.06) },
+          ], { w: s * 0.017, dry: 0.7 });
+        }
       }
-    }
+    };
     const outline = core;
 
     // ---- clothes cut into the figure ----
@@ -2390,6 +2405,22 @@
     const sleeveT = rng.f(0.36, 0.66);
     // A straight rule across the arm at the same place on both sides reads as
     // the seam where two tubes were butted together, not as a sleeve.
+    // a hem is not a rule: it wanders, and it stops short of the silhouette
+    const hemPts = () => {
+      const x0 = waistL.x + s * rng.f(0.04, 0.16);
+      const x1 = waistR.x - s * rng.f(0.04, 0.16);
+      const pts = [];
+      const n = 5;
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        pts.push({
+          x: x0 + (x1 - x0) * t,
+          y: hemY + Math.sin(t * Math.PI * rng.f(0.7, 1.6)) * s * rng.f(-0.05, 0.05) + rng.f(-2, 2),
+        });
+      }
+      return pts;
+    };
+
     const cuff = (S, side) => {
       if (rng.chance(0.22)) return; // not every sleeve gets marked
       const t = sleeveT + rng.f(-0.12, 0.12);
@@ -2397,25 +2428,30 @@
       const a = edgeOf(S, armR, -1, side < 0 ? 11 : 83)[i];
       const b = edgeOf(S, armR, 1, side < 0 ? 24 : 96)[i];
       if (!a || !b) return;
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      const bow = rng.f(-0.35, 0.35);
-      const short = rng.f(0, 0.22);
+      // A mark spanning the arm reads as the seam between two tubes. A cuff
+      // is a tick biting in from one edge and stopping.
+      const from = rng.chance(0.5) ? 0 : 1;
+      const p0 = from ? b : a;
+      const p1 = from ? a : b;
+      const reach = rng.f(0.3, 0.7);
       inkPoly(c, rng, [
-        { x: a.x + (b.x - a.x) * short, y: a.y + (b.y - a.y) * short },
-        { x: mx + (b.y - a.y) * bow * 0.3, y: my - (b.x - a.x) * bow * 0.3 },
-        { x: b.x - (b.x - a.x) * rng.f(0, 0.18), y: b.y - (b.y - a.y) * rng.f(0, 0.18) },
-      ], { w: s * rng.f(0.012, 0.02), dry: 0.8, wobble: s * 0.02 });
+        { x: p0.x, y: p0.y },
+        {
+          x: p0.x + (p1.x - p0.x) * reach * 0.55 + (p1.y - p0.y) * rng.f(-0.2, 0.2),
+          y: p0.y + (p1.y - p0.y) * reach * 0.55 - (p1.x - p0.x) * rng.f(-0.2, 0.2),
+        },
+        { x: p0.x + (p1.x - p0.x) * reach, y: p0.y + (p1.y - p0.y) * reach },
+      ], { w: s * rng.f(0.011, 0.018), dry: 0.9, wobble: s * 0.018 });
     };
 
     if (clothes.kind === "tee") {
       cuff(LaS, -1);
       cuff(RaS, 1);
       inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.06, s * rng.f(0.24, 0.32), 0.42, Math.PI - 0.42, rng), { w: s * 0.017, dry: 0.6, wobble: s * 0.035 });
-      inkPoly(c, rng, [{ x: waistL.x + s * 0.04, y: hemY }, { x: (waistL.x + waistR.x) / 2, y: hemY + rng.f(-5, 6) }, { x: waistR.x - s * 0.04, y: hemY + rng.f(-4, 5) }], { w: s * 0.018, dry: 0.6, wobble: s * 0.045 });
+      inkPoly(c, rng, hemPts(), { w: s * 0.018, dry: 0.6, wobble: s * 0.05 });
     } else if (clothes.kind === "hoodie") {
       inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckY + s * 0.36, s * 0.42, 0.35, Math.PI - 0.35, rng), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
-      inkPoly(c, rng, [{ x: waistL.x + s * 0.04, y: hemY }, { x: (waistL.x + waistR.x) / 2, y: hemY + rng.f(-5, 6) }, { x: waistR.x - s * 0.04, y: hemY + rng.f(-4, 5) }], { w: s * 0.021, dry: 0.6, wobble: s * 0.045 });
+      inkPoly(c, rng, hemPts(), { w: s * 0.021, dry: 0.6, wobble: s * 0.05 });
       const pk = (neckL.x + neckR.x) / 2;
       inkPoly(c, rng, [
         { x: pk - s * 0.34, y: hemY - s * 0.42 },
@@ -2442,7 +2478,7 @@
         { x: mid + s * 0.06, y: shY + s * 0.36 },
         { x: mid + s * 0.34, y: shY + s * 0.44 },
       ], { w: s * 0.016 });
-      inkPoly(c, rng, [{ x: waistL.x + s * 0.04, y: hemY }, { x: (waistL.x + waistR.x) / 2, y: hemY + rng.f(-5, 6) }, { x: waistR.x - s * 0.04, y: hemY + rng.f(-4, 5) }], { w: s * 0.02, dry: 0.6, wobble: s * 0.045 });
+      inkPoly(c, rng, hemPts(), { w: s * 0.02, dry: 0.6, wobble: s * 0.05 });
       cuff(LaS, -1);
       cuff(RaS, 1);
     } else if (clothes.kind === "sweater") {
@@ -2531,6 +2567,8 @@
       }
       c.restore();
     }
+
+    drawArms();
 
     if (clothes.darkLegs && clothes.pattern !== "dark") {
       c.save();
@@ -2642,12 +2680,12 @@
     if (!d) return size * 0.55;
     const sx = size * rng.f(0.86, 1.14);
     const sy = size * rng.f(0.88, 1.14);
-    const rot = rng.f(-0.09, 0.09);
+    const rot = rng.f(-0.06, 0.06);
     // A hand cannot repeat a letterform. Shear it, squash it unevenly, and
     // push every control point — otherwise the two O's in a word superimpose
     // and the whole thing reads as a distressed typeface.
-    const shear = rng.f(-0.22, 0.22);
-    const bulge = rng.f(-0.16, 0.16);
+    const shear = rng.f(-0.13, 0.13);
+    const bulge = rng.f(-0.09, 0.09);
     const gseed = rng.i(1, 99999);
     const w = size * (ch === " " ? 0.55 : ch === "i" || ch === "l" || ch === "I" || ch === "'" ? 0.42 : rng.f(0.74, 0.88));
     d.forEach((stroke) => {
@@ -2656,8 +2694,8 @@
       let px = 0;
       let py = 0;
       const xf = (u, v) => {
-        const jx = (fbm2(u * 3.1 + gseed * 0.01, v * 3.1, gseed) - 0.5) * size * 0.09;
-        const jy = (fbm2(v * 3.7 + gseed * 0.01, u * 3.7, gseed + 41) - 0.5) * size * 0.09;
+        const jx = (fbm2(u * 3.1 + gseed * 0.01, v * 3.1, gseed) - 0.5) * size * 0.055;
+        const jy = (fbm2(v * 3.7 + gseed * 0.01, u * 3.7, gseed + 41) - 0.5) * size * 0.055;
         const rx = (u - 0.5 + bulge * v * (1 - v) * 2) * sx - v * shear * sx;
         const ry = v * sy;
         return {
@@ -2688,13 +2726,13 @@
         }
       });
       // the pen runs past the join instead of stopping on it
-      if (pts.length > 1 && rng.chance(0.55)) {
+      if (pts.length > 1 && rng.chance(0.4)) {
         const a = pts[pts.length - 2];
         const b = pts[pts.length - 1];
-        const k = rng.f(0.06, 0.24);
+        const k = rng.f(0.04, 0.14);
         pts.push({ x: b.x + (b.x - a.x) * k * 3, y: b.y + (b.y - a.y) * k * 3 });
       }
-      inkPoly(c, rng, pts, { w: size * (wk ?? rng.f(0.08, 0.17)), passes: 1, dry: 0.55, wobble: size * rng.f(0.035, 0.08) });
+      inkPoly(c, rng, pts, { w: size * (wk ?? rng.f(0.075, 0.125)), passes: 1, dry: 0.55, wobble: size * rng.f(0.03, 0.055) });
     });
     return w;
   }
