@@ -41,6 +41,27 @@
     }
   }
 
+  // Named substreams, hashed from the root seed.
+  //
+  // Everything used to draw from one mutable stream in draw order, so paper()
+  // consuming a few thousand values before the figure meant that changing the
+  // fibre count changed the anatomy, the pose and the face. Nothing could be
+  // A/B tested in isolation. Each stage now gets its own stream, and
+  // correlations are passed explicitly rather than arising from adjacency.
+  function hash32(seed, label, idx) {
+    let h = (seed ^ 0x9e3779b9) >>> 0;
+    for (let i = 0; i < label.length; i++) {
+      h = Math.imul(h ^ label.charCodeAt(i), 2654435761);
+      h ^= h >>> 15;
+    }
+    h = Math.imul(h ^ ((idx | 0) + 0x85ebca6b), 2246822519);
+    return (h ^ (h >>> 13)) >>> 0;
+  }
+
+  function rngFor(seed, label, idx) {
+    return new Rng(hash32(seed, label, idx || 0));
+  }
+
   function parseSeed() {
     const q = new URLSearchParams(location.search).get("s");
     if (q && /^\d+$/.test(q)) return Number(q) >>> 0;
@@ -931,6 +952,86 @@
 
 
   // Features stay on the head. Hats and hair are allowed to leave it.
+  // ---------- landmarks ----------
+  // A landmark is not a point. It is a position, a depth, and a local frame
+  // on the surface — and the frame is what a feature should be drawn in.
+  //
+  // Everything used to be a screen-upright primitive: horizontal almond eyes,
+  // screen-horizontal brows, horizontal mouth arcs, fixed vertical ears. Roll
+  // and surface curvature moved their centres and left their geometry alone,
+  // so a tilted head wore a level face.
+  //
+  // The frame is built by pushing the point a little way along each surface
+  // tangent and projecting those too, through the SAME pipeline — so it
+  // carries the rotation, the perspective foreshortening and the lump
+  // deformation without any of that having to be reasoned about again.
+  // Its length is the foreshortening: a feature near the limb of the head
+  // squashes because its frame does.
+  function frameVectors(skull, local) {
+    const r = Math.hypot(local.x, local.y, local.z) || 1;
+    const u = Math.atan2(local.x, local.z);
+    const v = Math.asin(Math.max(-1, Math.min(1, local.y / r)));
+    const e = 0.06;
+    const at = (du, dv) => {
+      const cv = Math.cos(v + dv);
+      return { x: cv * Math.sin(u + du) * r, y: Math.sin(v + dv) * r, z: cv * Math.cos(u + du) * r };
+    };
+    const p = pin(skull, local);
+    const pu = pin(skull, at(e, 0));
+    const pv = pin(skull, at(0, e));
+    return {
+      p,
+      ax: (pu.x - p.x) / e,
+      ay: (pu.y - p.y) / e,
+      bx: (pv.x - p.x) / e,
+      by: (pv.y - p.y) / e,
+    };
+  }
+
+  function landmark(skull, local) {
+    const f = frameVectors(skull, local);
+    // Reference tangent lengths, taken once per skull at the point facing the
+    // viewer. Foreshortening is then each axis measured against its own
+    // reference — NOT against the other axis, which is what made a feature on
+    // the limb of the head fling its geometry across the page.
+    if (skull._refA === undefined) {
+      skull._refA = 1;
+      skull._refB = 1;
+      const f0 = frameVectors(skull, { x: 0, y: 0, z: 1 });
+      skull._refA = Math.max(1e-3, Math.hypot(f0.ax, f0.ay));
+      skull._refB = Math.max(1e-3, Math.hypot(f0.bx, f0.by));
+    }
+    let { ax, ay, bx, by } = f;
+    if (!isFinite(ax) || Math.hypot(ax, ay) < 1e-3) {
+      ax = skull._refA;
+      ay = 0;
+    }
+    if (!isFinite(bx) || Math.hypot(bx, by) < 1e-3) {
+      bx = 0;
+      by = skull._refB;
+    }
+    const r = Math.hypot(local.x, local.y, local.z) || 1;
+    const n = skull.rotate({ x: local.x / r, y: local.y / r, z: local.z / r });
+    return { x: f.p.x, y: f.p.y, z: f.p.z, nz: n.z, ax, ay, bx, by, ra: skull._refA, rb: skull._refB };
+  }
+
+  // Place a point in a landmark's frame. Each axis contributes its own unit
+  // direction, scaled by how foreshortened that axis is.
+  function onSurface(L, a, b) {
+    const ka = Math.hypot(L.ax, L.ay) || 1;
+    const kb = Math.hypot(L.bx, L.by) || 1;
+    const sa = Math.max(0.12, Math.min(1.6, ka / (L.ra || ka)));
+    const sb = Math.max(0.12, Math.min(1.6, kb / (L.rb || kb)));
+    return {
+      x: L.x + (L.ax / ka) * a * sa + (L.bx / kb) * b * sb,
+      y: L.y + (L.ay / ka) * a * sa + (L.by / kb) * b * sb,
+    };
+  }
+
+  function inFrame(L, a, b) {
+    return onSurface(L, a, b);
+  }
+
   function pin(skull, local) {
     return skull.limit(skull.deform(skull.project(local)), skull.s * 0.045);
   }
@@ -964,11 +1065,13 @@
       inkPoly(c, rng, arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26))), { w: w0 * 0.7, dry: 0.9 });
     }
 
-    const earL = pin(skull, { x: -0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
-    const earR = pin(skull, { x: 0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
+    const earL = landmark(skull, { x: -0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
+    const earR = landmark(skull, { x: 0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
     const er = skull.s * rng.f(0.14, 0.25);
-    if (earL.z > -0.02) drawEar(c, rng, earL.x, earL.y, er * rng.f(0.85, 1.15), -1);
-    if (earR.z > -0.02) drawEar(c, rng, earR.x, earR.y, er * rng.f(0.85, 1.15), 1);
+    // an ear sits on the limb of the head, so its normal barely faces us —
+    // it is visible while the surface has not turned right away
+    if (earL.nz > -0.3) drawEar(c, rng, earL, er * rng.f(0.85, 1.15), -1);
+    if (earR.nz > -0.3) drawEar(c, rng, earR, er * rng.f(0.85, 1.15), 1);
     return hull;
   }
 
@@ -1021,20 +1124,22 @@
     }
   }
 
-  function drawEar(c, rng, x, y, r, side) {
+  function drawEar(c, rng, L, r, side) {
+    // drawn in the ear's own frame, so it leans with the head rather than
+    // staying a fixed vertical C bolted to the silhouette
+    const F = (a, b) => onSurface(L, a, b);
     const pts = [];
     const n = 10;
     for (let i = 0; i <= n; i++) {
       const t = i / n;
       const a = -Math.PI * 0.55 + t * Math.PI * 1.15;
-      pts.push({
-        x: x + Math.cos(a) * r * side,
-        y: y + Math.sin(a) * r * 1.15,
-      });
+      pts.push(F(Math.cos(a) * r * side, Math.sin(a) * r * 1.15));
     }
     inkPoly(c, rng, pts, { w: r * 0.14 });
     if (rng.chance(0.6)) {
-      inkLine(c, rng, x + side * r * 0.15, y - r * 0.2, x + side * r * 0.35, y + r * 0.25, r * 0.1);
+      const q0 = F(side * r * 0.15, -r * 0.2);
+      const q1 = F(side * r * 0.35, r * 0.25);
+      inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, r * 0.1);
     }
   }
 
@@ -1321,7 +1426,7 @@
       inkPoly(c, rng, gap.slice(0, 7), { w: 1.1 * k, dry: 1.2 });
     }
 
-    // locks hanging past the hairline onto the forehead
+    // locks hanging past the hairline onto the forehead — these sit in front
     const locks = rng.chance(0.55) ? rng.i(1, 3) : 0;
     for (let i = 0; i < locks; i++) {
       const fi = rng.i(1, front.length - 2);
@@ -1494,7 +1599,13 @@
     return pick.concat(out.reverse());
   }
 
-  function drawHair(c, rng, skull, hull, style, color) {
+  // A miniature of the deferred command buffer Codex asked for. Hair is drawn
+  // before the face because the mass belongs behind it — but a hat brim or a
+  // lock hanging over the brow belongs in FRONT, and was being overpainted by
+  // the eyes and brows that came after it. Those go into `defer` and are
+  // flushed once the face is done.
+  function drawHair(c, rng, skull, hull, style, color, defer) {
+    const front = defer || [];
     const s = skull.s;
     const shape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
     const mk = (opt) => {
@@ -1650,8 +1761,10 @@
         inkMass(c, rng, h, color, { strays: 0, rag: 1.1, edge: 3.2 });
         const brim = brimPts(skull, h, rng.f(0.3, 0.62), rng);
         if (brim) {
-          inkMassFill(c, rng, brim, color, { bite: s * 0.026 });
-          inkPoly(c, rng, brim, { closed: true, w: s * 0.023, dry: 0.5 });
+          front.push(() => {
+            inkMassFill(c, rng, brim, color, { bite: s * 0.026 });
+            inkPoly(c, rng, brim, { closed: true, w: s * 0.023, dry: 0.5 });
+          });
         }
       }
       return;
@@ -1676,9 +1789,11 @@
         inkPoly(c, rng, h.front, { w: s * 0.03, dry: 0.35, passes: 2 });
         const brim = brimPts(skull, h, rng.f(0.34, 0.7), rng);
         if (brim) {
-          inkPoly(c, rng, brim, { closed: true, w: s * 0.026, dry: 0.5 });
-          const half = brim.slice(Math.floor(brim.length / 2));
-          inkPoly(c, rng, half, { w: s * 0.014, dry: 0.9 });
+          front.push(() => {
+            inkPoly(c, rng, brim, { closed: true, w: s * 0.026, dry: 0.5 });
+            const half = brim.slice(Math.floor(brim.length / 2));
+            inkPoly(c, rng, half, { w: s * 0.014, dry: 0.9 });
+          });
         }
       }
       return;
@@ -1705,17 +1820,28 @@
   }
 
   // ---------- features ----------
+  function arcInFrame(c, rng, F, ca, cb, ra, rb, a0, a1, w) {
+    const n = Math.max(6, Math.round((Math.max(ra, rb) * Math.abs(a1 - a0)) / 3.4));
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (a1 - a0) * (i / n);
+      pts.push(F(ca + Math.cos(a) * ra, cb + Math.sin(a) * rb));
+    }
+    inkPoly(c, rng, pts, { w });
+  }
+
   function almond(c, rng, p, rx, ry, fill) {
     const n = 12;
     const pts = [];
-    const squash = 0.58 + 0.42 * Math.max(0, p.z);
+    // Drawn in the surface frame. The old version squashed by a hand-rolled
+    // function of z and stayed screen-horizontal, so an eye on a rolled head
+    // sat level while the head leaned.
     for (let i = 0; i <= n; i++) {
       const a = (i / n) * Math.PI * 2;
       const k = 1 - 0.2 * Math.cos(2 * a);
-      pts.push({
-        x: p.x + Math.cos(a) * rx * squash * k,
-        y: p.y + Math.sin(a) * ry * k,
-      });
+      const ea = Math.cos(a) * rx * k;
+      const eb = Math.sin(a) * ry * k;
+      pts.push(p.ax !== undefined ? onSurface(p, ea, eb) : { x: p.x + ea, y: p.y + eb });
     }
     if (fill) inkFill(c, rng, pts, INK, 1, Math.max(0.5, ry * 0.16));
     inkPoly(c, rng, pts, { closed: true, w: Math.max(0.8, ry * 0.2) });
@@ -1728,10 +1854,11 @@
     // a pair of eyes is never a pair: different sizes, different heights
     const kL = rng.f(0.62, 1.3);
     const kR = rng.f(0.62, 1.3) * (rng.chance(0.28) ? 1.2 : 1);
-    const L = pin(skull, { x: -gap, y: -0.12 + fy + rng.f(-0.05, 0.03), z: 0.88 });
-    const R = pin(skull, { x: gap, y: -0.12 + fy + rng.f(-0.03, 0.05), z: 0.88 });
-    const showL = L.z > 0.02;
-    const showR = R.z > 0.02;
+    const L = landmark(skull, { x: -gap, y: -0.12 + fy + rng.f(-0.05, 0.03), z: 0.88 });
+    const R = landmark(skull, { x: gap, y: -0.12 + fy + rng.f(-0.03, 0.05), z: 0.88 });
+    // one rule, everywhere: is this bit of surface facing the viewer
+    const showL = L.nz > 0.06;
+    const showR = R.nz > 0.06;
     const rx0 = s * rng.f(0.15, 0.21);
     const ry0 = s * rng.f(0.085, 0.13);
     const rx = rx0;
@@ -1741,33 +1868,37 @@
     const eye = (p, kind, k) => {
       const x = p.x;
       const y = p.y;
-      const sq = 0.58 + 0.42 * Math.max(0, p.z);
+      const F = (a, b) => onSurface(p, a, b);
+      const sq = 1;
       if (kind === "dot") inkCirc(c, rng, x, y, s * 0.062 * k, s * 0.018, true);
       else if (kind === "open") {
         almond(c, rng, p, rx * k, ry * k, false);
         // the pupils go the same way — that is what makes it a gaze
-        inkCirc(c, rng, x + gz * rx * k * 0.42 * sq, y + rng.f(-0.06, 0.1) * ry, s * 0.042 * k, s * 0.013, true);
+        const pu = F(gz * rx * k * 0.42, rng.f(-0.06, 0.1) * ry);
+        inkCirc(c, rng, pu.x, pu.y, s * 0.042 * k, s * 0.013, true);
         if (rng.chance(0.5)) {
           // a lid cutting the top of the iris
-          inkArc(c, rng, x, y - ry * k * 0.25, rx * k * 0.9 * sq, Math.PI + 0.35, -0.35, s * 0.016);
+          arcInFrame(c, rng, F, 0, -ry * k * 0.25, rx * k * 0.9, ry * k * 0.9, Math.PI + 0.35, -0.35, s * 0.016);
         }
       } else if (kind === "closed") {
         // shut: one curve and a lash or two
-        inkArc(c, rng, x, y, rx * k * 0.9 * sq, Math.PI + rng.f(0.15, 0.45), rng.f(-0.45, -0.15), s * 0.019);
-        if (rng.chance(0.5)) inkLine(c, rng, x - rx * k * 0.5, y + s * 0.02, x - rx * k * 0.75, y + s * 0.05, s * 0.012);
+        arcInFrame(c, rng, F, 0, 0, rx * k * 0.9, ry * k * 1.1, Math.PI + rng.f(0.15, 0.45), rng.f(-0.45, -0.15), s * 0.019);
+        if (rng.chance(0.5)) { const q0 = F(-rx * k * 0.5, s * 0.02), q1 = F(-rx * k * 0.75, s * 0.05); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.012); }
       } else if (kind === "squint") {
         // pinched between two lids, no ring at all
-        inkArc(c, rng, x, y + ry * k * 0.5, rx * k * sq, Math.PI + 0.4, -0.4, s * 0.02);
-        inkArc(c, rng, x, y - ry * k * 0.5, rx * k * sq, 0.45, Math.PI - 0.45, s * 0.017);
-        inkCirc(c, rng, x + gz * rx * k * 0.3 * sq, y, s * rng.f(0.022, 0.036) * k, s * 0.012, true);
+        arcInFrame(c, rng, F, 0, ry * k * 0.5, rx * k, ry * k, Math.PI + 0.4, -0.4, s * 0.02);
+        arcInFrame(c, rng, F, 0, -ry * k * 0.5, rx * k, ry * k, 0.45, Math.PI - 0.45, s * 0.017);
+        const pq = F(gz * rx * k * 0.3, 0);
+        inkCirc(c, rng, pq.x, pq.y, s * rng.f(0.022, 0.036) * k, s * 0.012, true);
       } else if (kind === "half") {
         // a heavy lid cutting the top third off the eye
         almond(c, rng, p, rx * k, ry * k, false);
-        inkCirc(c, rng, x + gz * rx * k * 0.4 * sq, y + ry * k * 0.2, s * 0.04 * k, s * 0.013, true);
+        const ph = F(gz * rx * k * 0.4, ry * k * 0.2);
+        inkCirc(c, rng, ph.x, ph.y, s * 0.04 * k, s * 0.013, true);
         inkPoly(c, rng, [
-          { x: x - rx * k * 1.05 * sq, y: y - ry * k * 0.5 },
-          { x: x, y: y - ry * k * (0.95 + rng.f(-0.2, 0.2)) },
-          { x: x + rx * k * 1.05 * sq, y: y - ry * k * 0.45 },
+          F(-rx * k * 1.05, -ry * k * 0.5),
+          F(0, -ry * k * (0.95 + rng.f(-0.2, 0.2))),
+          F(rx * k * 1.05, -ry * k * 0.45),
         ], { w: s * rng.f(0.022, 0.032), dry: 0.35 });
       } else if (kind === "bare") {
         // no lid drawn at all: a pupil sitting on the face
@@ -1775,13 +1906,13 @@
         if (rng.chance(0.6)) inkArc(c, rng, x, y - ry * k * 0.4, rx * k * 0.8 * sq, Math.PI + 0.5, -0.5, s * 0.016);
       } else if (kind === "x") {
         const r = s * 0.1;
-        inkLine(c, rng, x - r * sq, y - r, x + r * sq, y + r, s * 0.017);
-        inkLine(c, rng, x - r * sq, y + r, x + r * sq, y - r, s * 0.017);
+        { const q0 = F(-r, -r), q1 = F(r, r); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.017); }
+        { const q0 = F(-r, r), q1 = F(r, -r); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.017); }
       } else if (kind === "slit") {
-        inkLine(c, rng, x - s * 0.15 * sq, y, x + s * 0.15 * sq, y, s * 0.018);
+        { const q0 = F(-s * 0.15, 0), q1 = F(s * 0.15, 0); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.018); }
       } else if (kind === "angry") {
-        inkLine(c, rng, x - s * 0.16 * sq, y - s * 0.09, x + s * 0.12 * sq, y - s * 0.02, s * 0.018);
-        inkLine(c, rng, x - s * 0.1 * sq, y + s * 0.05, x + s * 0.1 * sq, y + s * 0.05, s * 0.014);
+        { const q0 = F(-s * 0.16, -s * 0.09), q1 = F(s * 0.12, -s * 0.02); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.018); }
+        { const q0 = F(-s * 0.1, s * 0.05), q1 = F(s * 0.1, s * 0.05); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.014); }
       }
     };
 
@@ -1841,18 +1972,14 @@
     const hL = rng.f(-0.06, 0.02);
     const hR = rng.f(-0.02, 0.07);
     const brow = (side, h) => {
-      const p = pin(skull, { x: (skull.eyeGap ?? 0.36) * side, y: -0.3 + (skull.faceY || 0) + h, z: 0.86 });
-      if (p.z < 0.02) return;
-      const sq = 0.6 + 0.4 * Math.max(0, p.z);
+      const p = landmark(skull, { x: (skull.eyeGap ?? 0.36) * side, y: -0.3 + (skull.faceY || 0) + h, z: 0.86 });
+      if (p.nz < 0.06) return;
       const lift = style === "angry" ? s * 0.08 * side : style === "arch" ? -s * 0.06 : 0;
       const pts = [];
       for (let i = 0; i <= 5; i++) {
         const t = i / 5;
         const arch = style === "arch" ? -Math.sin(t * Math.PI) * s * 0.05 : 0;
-        pts.push({
-          x: p.x + (t - 0.5) * s * 0.32 * sq,
-          y: p.y + lift * (1 - t * 1.4) + arch,
-        });
+        pts.push(onSurface(p, (t - 0.5) * s * 0.32, lift * (1 - t * 1.4) + arch));
       }
       inkPoly(c, rng, pts, { w: s * rng.f(0.028, 0.042), dry: 0.4 });
     };
@@ -1974,97 +2101,81 @@
   function drawMouth(c, rng, skull, style, nose) {
     const s = skull.s;
     const fy = (skull.faceY || 0) * 0.5;
-    let m;
+    // The mouth gets a real surface frame, then keeps it while its POSITION
+    // is moved to sit under whatever nose this face got. Before, it was a
+    // set of screen-horizontal arcs that stayed level on a rolled head.
+    const ML = landmark(skull, { x: rng.f(-0.06, 0.06) + Math.sin(skull.yaw) * 0.08, y: rng.f(0.54, 0.68) + fy, z: 0.78 });
     if (nose) {
-      // A mouth sits under the nose it belongs to. Parking it at a fixed
-      // height while the nose length varies is what makes forty different
-      // noses read as one face.
       const gap = s * rng.f(0.16, 0.42);
       const off = s * rng.f(-0.09, 0.09);
-      m = skull.limit(
+      const q = skull.limit(
         skull.deform({
           x: nose.browP.x + nose.ax * (nose.base + gap) - nose.ay * off,
           y: nose.browP.y + nose.ay * (nose.base + gap) + nose.ax * off,
         }),
         s * 0.14
       );
-    } else {
-      m = pin(skull, { x: rng.f(-0.06, 0.06) + Math.sin(skull.yaw) * 0.08, y: rng.f(0.54, 0.68) + fy, z: 0.78 });
+      ML.x = q.x;
+      ML.y = q.y;
     }
-    if (m.z !== undefined && m.z < -0.05) return;
-    const x = m.x;
-    const y = m.y;
+    if (ML.nz < -0.1) return;
+    const F = (a, b) => onSurface(ML, a, b);
+    const x = ML.x;
+    const y = ML.y;
     const w = s * rng.f(0.03, 0.048);
     const wide = s * rng.f(0.16, 0.28);
     if (style === "smile") {
-      inkArc(c, rng, x, y - s * 0.05, wide, 0.3, Math.PI - 0.3, w);
+      arcInFrame(c, rng, F, 0, -s * 0.05, wide, wide * 0.8, 0.3, Math.PI - 0.3, w);
     } else if (style === "frown") {
-      inkArc(c, rng, x, y + s * 0.2, wide * 0.9, Math.PI + 0.3, -0.3, w);
+      arcInFrame(c, rng, F, 0, s * 0.2, wide * 0.9, wide * 0.75, Math.PI + 0.3, -0.3, w);
     } else if (style === "open") {
       // an open jaw with something inside it
       const pts = [];
       for (let i = 0; i <= 12; i++) {
         const a = (i / 12) * Math.PI * 2;
-        pts.push({ x: x + Math.cos(a) * wide * 0.62, y: y + Math.sin(a) * s * rng.f(0.1, 0.15) });
+        pts.push(F(Math.cos(a) * wide * 0.62, Math.sin(a) * s * rng.f(0.1, 0.15)));
       }
       inkPoly(c, rng, pts, { closed: true, w, dry: 0.4 });
       if (rng.chance(0.55)) {
         const n = rng.i(2, 4);
         for (let i = 1; i < n; i++) {
           const tx = x - wide * 0.5 + (i / n) * wide;
-          inkLine(c, rng, tx, y - s * 0.09, tx, y - s * rng.f(0.02, 0.05), w * 0.6);
+          const t0 = F(tx - x, -s * 0.09), t1 = F(tx - x, -s * rng.f(0.02, 0.05));
+          inkLine(c, rng, t0.x, t0.y, t1.x, t1.y, w * 0.6);
         }
       } else if (rng.chance(0.5)) {
         inkMassFill(c, rng, pts, INK, { bite: s * 0.02 });
       }
     } else if (style === "teeth") {
       // a row of teeth showing under a lip
-      inkPoly(c, rng, [
-        { x: x - wide, y: y + rng.f(-2, 2) },
-        { x, y: y - s * rng.f(0.0, 0.05) },
-        { x: x + wide, y: y + rng.f(-2, 3) },
-      ], { w, dry: 0.4 });
+      inkPoly(c, rng, [F(-wide, rng.f(-2, 2)), F(0, -s * rng.f(0.0, 0.05)), F(wide, rng.f(-2, 3))], { w, dry: 0.4 });
       const n = rng.i(3, 6);
       for (let i = 1; i < n; i++) {
         const tx = x - wide * 0.8 + (i / n) * wide * 1.6;
-        inkLine(c, rng, tx, y + s * 0.01, tx + rng.f(-1, 1), y + s * rng.f(0.06, 0.11), w * 0.55);
+        const u0 = F(tx - x, s * 0.01), u1 = F(tx - x + rng.f(-1, 1), s * rng.f(0.06, 0.11));
+        inkLine(c, rng, u0.x, u0.y, u1.x, u1.y, w * 0.55);
       }
-      inkPoly(c, rng, [
-        { x: x - wide * 0.85, y: y + s * 0.02 },
-        { x, y: y + s * rng.f(0.1, 0.16) },
-        { x: x + wide * 0.85, y: y + s * 0.03 },
-      ], { w: w * 0.8, dry: 0.5 });
+      inkPoly(c, rng, [F(-wide * 0.85, s * 0.02), F(0, s * rng.f(0.1, 0.16)), F(wide * 0.85, s * 0.03)], { w: w * 0.8, dry: 0.5 });
     } else if (style === "smirk") {
-      inkPoly(c, rng, [
-        { x: x - wide * 0.85, y: y + s * 0.05 },
-        { x: x + s * 0.04, y: y - s * 0.01 },
-        { x: x + wide * 0.9, y: y - s * 0.09 },
-      ], { w, dry: 0.4 });
+      inkPoly(c, rng, [F(-wide * 0.85, s * 0.05), F(s * 0.04, -s * 0.01), F(wide * 0.9, -s * 0.09)], { w, dry: 0.4 });
     } else if (style === "lips") {
       // an overhanging upper lip
-      inkPoly(c, rng, [
-        { x: x - wide * 0.9, y },
-        { x: x - wide * 0.28, y: y - s * 0.045 },
-        { x: x + wide * 0.2, y: y - s * 0.03 },
-        { x: x + wide * 0.9, y: y + s * 0.01 },
-      ], { w: w * 1.25, dry: 0.35 });
-      inkArc(c, rng, x, y + s * 0.01, wide * 0.8, 0.3, Math.PI - 0.3, w * 0.75);
+      inkPoly(c, rng, [F(-wide * 0.9, 0), F(-wide * 0.28, -s * 0.045), F(wide * 0.2, -s * 0.03), F(wide * 0.9, s * 0.01)], { w: w * 1.25, dry: 0.35 });
+      arcInFrame(c, rng, F, 0, s * 0.01, wide * 0.8, wide * 0.6, 0.3, Math.PI - 0.3, w * 0.75);
     } else if (style === "pucker") {
       inkCirc(c, rng, x, y, s * rng.f(0.05, 0.085), w, false);
-      inkLine(c, rng, x - s * 0.14, y - s * 0.02, x - s * 0.06, y, w * 0.6);
-      inkLine(c, rng, x + s * 0.06, y, x + s * 0.14, y - s * 0.03, w * 0.6);
+      { const a0 = F(-s * 0.14, -s * 0.02), a1 = F(-s * 0.06, 0); inkLine(c, rng, a0.x, a0.y, a1.x, a1.y, w * 0.6); }
+      { const b0 = F(s * 0.06, 0), b1 = F(s * 0.14, -s * 0.03); inkLine(c, rng, b0.x, b0.y, b1.x, b1.y, w * 0.6); }
     } else {
-      inkPoly(c, rng, [
-        { x: x - wide * rng.f(0.7, 1.0), y: y + rng.f(-1, 2) },
-        { x: x + s * rng.f(-0.03, 0.05), y: y + rng.f(-2, 2) },
-        { x: x + wide * rng.f(0.6, 1.0), y: y + rng.f(-3, 2) },
-      ], { w, dry: 0.4 });
+      inkPoly(c, rng, [F(-wide * rng.f(0.7, 1.0), rng.f(-1, 2)), F(s * rng.f(-0.03, 0.05), rng.f(-2, 2)), F(wide * rng.f(0.6, 1.0), rng.f(-3, 2))], { w, dry: 0.4 });
     }
     // corner marks — a mouth ends somewhere, it does not just stop
     if (rng.chance(0.6)) {
       const side = rng.sign();
-      const cxm = x + side * s * rng.f(0.11, 0.19);
-      inkLine(c, rng, cxm, y + rng.f(-2, 1), cxm + side * s * 0.04, y + s * rng.f(0.03, 0.08), w * 0.7);
+      const ca = side * s * rng.f(0.11, 0.19);
+      const c0 = onSurface(ML, ca, rng.f(-2, 1));
+      const c1 = onSurface(ML, ca + side * s * 0.04, s * rng.f(0.03, 0.08));
+      inkLine(c, rng, c0.x, c0.y, c1.x, c1.y, w * 0.7);
     }
   }
 
@@ -3154,8 +3265,9 @@
     }, rng);
   }
 
-  function drawDude(c, rng, dude, w, h) {
-    paper(c, w, h, rng);
+  function drawDude(c, R, dude, w, h) {
+    const rng = R.mark;
+    paper(c, w, h, R.paper);
     const s = dude.size;
     const cx = w * rng.f(0.38, 0.48) + rng.f(-8, 8);
     const cy = h * 0.225 + rng.f(-10, 10);
@@ -3185,32 +3297,37 @@
     skull.faceY = dude.faceY;
     skull.gaze = dude.gaze;
     skull.eyeGap = dude.eyeGap;
-    const body = drawBody(c, rng, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
+    if (dude.colour === "behind") {
+      // A wash "behind" the figure that is composited last is not behind
+      // anything. It goes down on the paper first, before a single mark.
+      const rr = s * R.colour.f(0.95, 1.25);
+      const blob = [];
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        const k = rr * (1 + (fbm2(i * 0.5, 3, R.colour.seed) - 0.5) * 0.3);
+        blob.push({ x: cx + Math.cos(a) * k, y: cy + Math.sin(a) * k * 1.08 });
+      }
+      colourPass(c, R.colour, s, [{ pts: blob }]);
+    }
+
+    const body = drawBody(c, R.body, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
     const hull = drawHead(c, rng, skull, dude.skin);
-    drawHair(c, rng, skull, hull, dude.hair, dude.hairColor);
+    const inFront = [];
+    drawHair(c, rng, skull, hull, dude.hair, dude.hairColor, inFront);
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
     const nose = drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
     // beard first: a filled mass drawn after the mouth swallows it
     drawFacialHair(c, rng, skull, dude.beard);
     drawMouth(c, rng, skull, dude.mouth, nose);
+    inFront.forEach((f) => f()); // brims and locks sit over the face, not under it
 
-    if (dude.colour) {
+    if (dude.colour && dude.colour !== "behind") {
       const targets = [];
       if (dude.colour === "head") targets.push({ pts: hull });
       if (dude.colour === "body" && body.core) targets.push({ pts: body.core });
-      if (dude.colour === "behind") {
-        const blob = [];
-        const rr = s * rng.f(1.15, 1.5);
-        for (let i = 0; i < 14; i++) {
-          const a = (i / 14) * Math.PI * 2;
-          const k = rr * (1 + (fbm2(i * 0.5, 3, rng.seed) - 0.5) * 0.3);
-          blob.push({ x: cx + Math.cos(a) * k, y: cy + Math.sin(a) * k * 1.08 });
-        }
-        targets.push({ pts: blob });
-      }
       if (!targets.length) targets.push({ pts: hull });
-      colourPass(c, rng, s, targets);
+      colourPass(c, R.colour, s, targets);
     }
 
     // The name goes where there is room, the way a hand writes it in the gap
@@ -3244,7 +3361,7 @@
     }
     nameX = Math.max(16, Math.min(w - nameW - 12, nameX));
     nameY = Math.max(size * 1.2, Math.min(h - size * 1.6, nameY));
-    drawName(c, rng, dude.name, nameX, nameY, size);
+    drawName(c, R.name, dude.name, nameX, nameY, size);
     grainPass(c, c.__dpr);
   }
 
@@ -3298,7 +3415,7 @@
   // ---------- plate mode (?plate=1): a sheet of heads, for judging
   // against the reference plates on the same terms ----------
   function drawPlate(c, w, h, seed0) {
-    const rng0 = new Rng(seed0);
+    const rng0 = rngFor(seed0, "paper");
     paper(c, w, h, rng0);
     const cols = 6;
     const rows = 8;
@@ -3310,8 +3427,9 @@
       const rowDy = rng0.f(-7, 7);
       const rowS = rng0.f(0.9, 1.1);
       for (let col = 0; col < cols; col++) {
-        const rng = new Rng((seed0 + (r * cols + col) * 7919) >>> 0);
-        const d = makeDude(rng);
+        const idx = r * cols + col;
+        const d = makeDude(rngFor(seed0, "person", idx));
+        const rng = rngFor(seed0, "mark", idx);
         const s = Math.min(cw, ch) * rng.f(0.27, 0.37) * rowS;
         const cx = Math.max(s * 1.15, Math.min(w - s * 1.15, cw * (col + 0.5) + rowDx + rng.f(-7, 7)));
         const cy = Math.max(s * 1.2, Math.min(h - s * 1.3, 18 + ch * (r + 0.5) + rowDy + rng.f(-8, 8)));
@@ -3327,12 +3445,14 @@
         skull.gaze = d.gaze;
         skull.eyeGap = d.eyeGap;
         const hull = drawHead(c, rng, skull, d.skin);
-        drawHair(c, rng, skull, hull, d.hair, d.hairColor);
+        const inFront = [];
+        drawHair(c, rng, skull, hull, d.hair, d.hairColor, inFront);
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
         const nose = drawNose(c, rng, skull, d.nose, d.noseHeavy);
         drawFacialHair(c, rng, skull, d.beard);
         drawMouth(c, rng, skull, d.mouth, nose);
+        inFront.forEach((f) => f());
         if (rng.chance(0.5)) drawNeck(c, rng, skull);
         if (d.colour) {
           if (d.colour === "behind") {
@@ -3343,9 +3463,9 @@
               const k = rr * (1 + (fbm2(i * 0.5, 3, rng.seed) - 0.5) * 0.3);
               blob.push({ x: cx + Math.cos(a) * k, y: cy + Math.sin(a) * k * 1.08 });
             }
-            colourPass(c, rng, s, [{ pts: blob }]);
+            colourPass(c, rngFor(seed0, "colour", idx), s, [{ pts: blob }]);
           } else {
-            colourPass(c, rng, s, [{ pts: hull }]);
+            colourPass(c, rngFor(seed0, "colour", idx), s, [{ pts: hull }]);
           }
         }
       }
@@ -3379,8 +3499,15 @@
 
   function render(nextSeed) {
     seed = nextSeed >>> 0;
-    const rng = new Rng(seed);
-    const dude = makeDude(rng);
+    const R = {
+      person: rngFor(seed, "person"),
+      paper: rngFor(seed, "paper"),
+      mark: rngFor(seed, "mark"),
+      body: rngFor(seed, "body"),
+      name: rngFor(seed, "name"),
+      colour: rngFor(seed, "colour"),
+    };
+    const dude = makeDude(R.person);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const cssW = canvas.clientWidth || 720;
     const cssH = canvas.clientHeight || 920;
@@ -3389,7 +3516,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.__dpr = dpr;
     if (PLATE) drawPlate(ctx, cssW, cssH, seed);
-    else drawDude(ctx, rng, dude, cssW, cssH);
+    else drawDude(ctx, R, dude, cssW, cssH);
     count += 1;
     drawButton(seed ^ 0x9e3779b9);
     tallyEl.textContent = `dude nº ${count}`;
