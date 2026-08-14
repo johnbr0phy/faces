@@ -175,7 +175,10 @@
       while (ang > Math.PI) ang -= Math.PI * 2;
       while (ang < -Math.PI) ang += Math.PI * 2;
       const turn = Math.abs(ang);
-      if (turn > 0.35) press *= 1 + Math.min(0.7, (turn - 0.35) * 1.1); // ink pools in the corner
+      // ink pools in a corner, but only a real corner: past about 1.2 rad the
+      // pen is travelling round an end, not stopping into a join, and a blob
+      // there reads as an armature pivot bolted to the drawing
+      if (turn > 0.35 && turn < 1.25) press *= 1 + Math.min(0.55, (turn - 0.35) * 0.95);
       if (opt.taper !== undefined) press *= 1 + (opt.taper - 1) * Math.pow(t01, opt.taperPow ?? 1.4);
       W[i] = Math.max(0.26, w * Math.min(2.6, Math.max(0.08, press)));
       // the nib lifts rarely and briefly; a dashed line is a broken pen,
@@ -571,9 +574,9 @@
           // tooth: without this the ground reads as a flat digital field, and
           // that alone gives the sheet away next to a photographed one.
           const m =
-            (valueNoise(x * 0.011, y * 0.011, 9001) - 0.5) * 2 +
-            (valueNoise(x * 0.037, y * 0.037, 9109) - 0.5) * 1.1 +
-            (valueNoise(x * 0.13, y * 0.13, 9227) - 0.5) * 0.5;
+            (valueNoise(x * 0.011, y * 0.011, 9001) - 0.5) * 1.15 +
+            (valueNoise(x * 0.037, y * 0.037, 9109) - 0.5) * 1.2 +
+            (valueNoise(x * 0.13, y * 0.13, 9227) - 0.5) * 1.05;
           const v = m * 9.2 + (u - 0.5) * 5.2;
           d[p] = Math.max(0, Math.min(255, r + v));
           d[p + 1] = Math.max(0, Math.min(255, g + v * 0.94));
@@ -1904,7 +1907,7 @@
     dy /= d;
     const nx = -dy;
     const ny = dx;
-    const pr = r * rng.f(1.05, 1.4);
+    const pr = r * rng.f(1.45, 2.0);
     const c0 = { x: tip.x + dx * pr * 0.5, y: tip.y + dy * pr * 0.5 };
     const pts = [];
     const nF = rng.i(3, 4);
@@ -1919,7 +1922,7 @@
     }
     inkPoly(c, rng, [{ x: tip.x - nx * r * side, y: tip.y - ny * r }].concat(pts).concat([
       { x: tip.x + nx * r * side, y: tip.y + ny * r },
-    ]), { w: s * 0.026, dry: 0.7, wobble: s * 0.02 });
+    ]), { w: s * 0.026, dry: 0.9, wobble: s * 0.025 });
     // knuckle ticks instead of drawn fingers
     for (let i = 1; i < nF; i++) {
       if (rng.chance(0.4)) continue;
@@ -2090,7 +2093,10 @@
     const armShape = (S, sd) => {
       const a = edgeOf(S, armR, -1, sd);
       const b = edgeOf(S, armR, 1, sd + 13);
-      return a.concat(round(S, armR(1))).concat(b.reverse());
+      // round both ends: an arm that closes on a hard reversal at the
+      // shoulder gets a blot there every time
+      const shoulderCap = round(S.slice().reverse(), armR(0)).reverse();
+      return a.concat(round(S, armR(1))).concat(b.reverse()).concat(shoulderCap);
     };
     const Larm = armShape(LaS, 11);
     const Rarm = armShape(RaS, 83);
@@ -2270,7 +2276,13 @@
     inkMassFill(c, rng, Lfoot, INK, { bite: s * 0.04 });
     inkMassFill(c, rng, Rfoot, INK, { bite: s * 0.04 });
 
-    return { hipY, footY };
+    let maxX = -Infinity;
+    let minX = Infinity;
+    for (const q of core.concat(Larm, Rarm)) {
+      if (q.x > maxX) maxX = q.x;
+      if (q.x < minX) minX = q.x;
+    }
+    return { hipY, footY, maxX, minX };
   }
 
   // ---------- handwritten name ----------
@@ -2626,10 +2638,10 @@
       nameX = cx + s * rng.f(-1.4, 0.5);
       nameY = Math.min(h - size * 1.5, body.footY + s * rng.f(0.3, 0.75));
     } else if (spot === "shoulder") {
-      nameX = cx + s * rng.f(1.5, 1.85);
+      nameX = Math.max(body.maxX + s * rng.f(0.14, 0.4), cx + s * 1.35);
       nameY = cy + s * rng.f(1.6, 2.4);
     } else {
-      nameX = cx + s * rng.f(1.2, 1.5);
+      nameX = Math.max(body.maxX + s * rng.f(0.1, 0.32), cx + s * 1.15);
       nameY = cy + s * rng.f(0.0, 0.55);
     }
     const nameW = size * (String(dude.name).length * 0.92 + 0.6);
