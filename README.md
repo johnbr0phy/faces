@@ -1,6 +1,8 @@
 # a dude
 
-One page. Click the button, get another dude.
+[Open the page](https://johnbr0phy.github.io/faces/). One click, another dude.
+
+[![A sheet of forty-eight generated heads](plate.jpg)](https://johnbr0phy.github.io/faces/?plate=1&s=2026)
 
 Every feature is a function. Nothing is a bitmap. Faces are pinned to a rough
 3D skull, so yaw, pitch and roll carry the eyes, nose, mouth, hair and hats
@@ -53,6 +55,15 @@ the grain pass alone costs three times what the whole figure does.
 
 `?plate=1` renders a sheet of 48 heads on one page.
 
+| | |
+| --- | --- |
+| `?s=4929` | that dude, every time |
+| `?anim=0` | still |
+| `?m=walk` | walk, wave, jump, look, dance, or shrug |
+| `?plate=1` | a sheet of 48 heads |
+
 `scripts/shot.sh` screenshots seeded dudes; `scripts/plate.sh` does the same for
 a sheet; `scripts/anim.sh <seed> <motion>` grabs the frames of one cycle and
 `scripts/strip.py` lays them out as a strip to flip through.
+
+The drawings are after [mannay](https://x.com/mannay/status/2087522034351796728).
