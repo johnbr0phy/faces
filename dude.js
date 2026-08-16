@@ -4904,76 +4904,135 @@
   // would no longer be the dude that got drawn. Under a transform the stream
   // is identical, so the measurement is exact rather than approximate.
   const CANON = 110;
+  // generous enough that nothing can run off the edge of the measuring sheet
+  // and be measured short
+  const MEAS_W = CANON * 11;
+  const MEAS_H = CANON * 13;
+  const MEAS_OX = MEAS_W * 0.5;
+  const MEAS_OY = CANON * 3;
   let measCv = null;
   const extentCache = new Map();
 
-  function figureExtent(seed, dude, tag) {
-    const key = `${seed >>> 0}:${tag || ""}`;
-    const hit = extentCache.get(key);
-    if (hit) return hit;
-    // generous enough that nothing can run off the edge of the measuring
-    // sheet and be measured short
-    const mw = CANON * 11;
-    const mh = CANON * 13;
-    const ox = mw * 0.5;
-    const oy = CANON * 3;
-    // if the pixels cannot be read back, assume a big dude rather than a
-    // clipped one
-    let ext = { up: CANON * 1.35, down: CANON * 6.3, left: CANON * 2.1, right: CANON * 2.1 };
+  // if the pixels cannot be read back, assume a big dude rather than a
+  // clipped one
+  const safeExtent = () => ({ up: CANON * 1.35, down: CANON * 6.3, left: CANON * 2.1, right: CANON * 2.1 });
+
+  // The sheet is big enough that no dude can run off it, which means most of
+  // it is bare paper that gets carried out of the canvas and scanned for ink
+  // that was never going to be there. A few hundred dudes measured across
+  // every motion put the furthest ink at 2.41 canon to the side and 5.95
+  // below the origin, so a window of 2.9 by 6.7 holds all of them with room
+  // to spare, and it is a third of the pixels.
+  //
+  // It is a window, not a smaller sheet: he is still drawn on the whole
+  // thing, and if any ink does reach the edge of the window then the window
+  // was the wrong size to judge him by and the whole sheet is read instead.
+  // So the answer is the same answer as reading it all every time — this only
+  // stops the reading of paper that has nothing on it, which was by a long
+  // way the most expensive thing that happened when a dude appeared.
+  const WIN_X = Math.round(CANON * 2.9);
+  const WIN_DOWN = Math.round(CANON * 6.7);
+
+  // The box round the ink in a rectangle of the sheet, in sheet coordinates.
+  // x1 comes back at -1 when there is no ink in it at all.
+  function inkBox(mc, rx, ry, rw, rh) {
+    const d = mc.getImageData(rx, ry, rw, rh).data;
+    let x0 = rw;
+    let y0 = rh;
+    let x1 = -1;
+    let y1 = -1;
+    for (let y = 0, p = 3; y < rh; y++) {
+      for (let x = 0; x < rw; x++, p += 4) {
+        if (d[p] > 12) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    return x1 < 0 ? { x0: MEAS_W, y0: MEAS_H, x1: -1, y1: -1 } : { x0: x0 + rx, y0: y0 + ry, x1: x1 + rx, y1: y1 + ry };
+  }
+
+  function measureExtent(pose) {
     try {
       if (!measCv) measCv = document.createElement("canvas");
-      measCv.width = mw;
-      measCv.height = mh;
+      // Assigning width or height throws the old buffer away and takes a new
+      // one, six megabytes at a time. The sheet is always the same size, so
+      // it is sized once and wiped from then on.
+      if (measCv.width !== MEAS_W || measCv.height !== MEAS_H) {
+        measCv.width = MEAS_W;
+        measCv.height = MEAS_H;
+      }
       const mc = measCv.getContext("2d", { willReadFrequently: true });
       mc.setTransform(1, 0, 0, 1, 0, 0);
-      mc.clearRect(0, 0, mw, mh);
+      mc.clearRect(0, 0, MEAS_W, MEAS_H);
       // Both passes must draw about the SAME origin, not merely at the same
       // size. The nib skips a stroke where the paper tooth is high, and the
       // tooth is sampled in user coordinates — draw him somewhere else on the
       // sheet and a different set of marks survives, which consumes a
       // different number of random numbers and hands back a different dude.
       // So the offset goes in the transform and he is always drawn at 0, 0.
-      mc.setTransform(1, 0, 0, 1, ox, oy);
-      const MR = { mark: rngFor(seed, "mark"), body: rngFor(seed, "body"), colour: rngFor(seed, "colour"), hair: rngFor(seed, "hair") };
-      figureInk(mc, MR, dude, 0, 0, CANON);
-      const d = mc.getImageData(0, 0, mw, mh).data;
-      let x0 = mw;
-      let y0 = mh;
-      let x1 = -1;
-      let y1 = -1;
-      for (let y = 0, p = 3; y < mh; y++) {
-        for (let x = 0; x < mw; x++, p += 4) {
-          if (d[p] > 12) {
-            if (x < x0) x0 = x;
-            if (x > x1) x1 = x;
-            if (y < y0) y0 = y;
-            if (y > y1) y1 = y;
-          }
-        }
-      }
+      mc.setTransform(1, 0, 0, 1, MEAS_OX, MEAS_OY);
+      pose(mc);
+      // The window runs to the top of the sheet, so the one edge a normal
+      // dude can reach — the top of a tall hat — is the sheet's own edge and
+      // is judged below exactly as it always was.
+      const wx = MEAS_OX - WIN_X;
+      const ww = WIN_X * 2;
+      const wh = MEAS_OY + WIN_DOWN;
+      let b = inkBox(mc, wx, 0, ww, wh);
+      if (b.x1 >= 0 && (b.x0 <= wx || b.x1 >= wx + ww - 1 || b.y1 >= wh - 1)) b = inkBox(mc, 0, 0, MEAS_W, MEAS_H);
+      const { x0, y0, x1, y1 } = b;
       if (x1 > x0 && y1 > y0) {
-        const m = { up: oy - y0, down: y1 - oy, left: ox - x0, right: x1 - ox };
+        const safe = safeExtent();
+        const m = { up: MEAS_OY - y0, down: y1 - MEAS_OY, left: MEAS_OX - x0, right: x1 - MEAS_OX };
         // if his ink reached the edge of the measuring sheet he is bigger
         // than what was measured, so that side falls back to the safe guess
-        if (y0 <= 0) m.up = Math.max(m.up, ext.up);
-        if (y1 >= mh - 1) m.down = Math.max(m.down, ext.down);
-        if (x0 <= 0) m.left = Math.max(m.left, ext.left);
-        if (x1 >= mw - 1) m.right = Math.max(m.right, ext.right);
-        ext = m;
+        if (y0 <= 0) m.up = Math.max(m.up, safe.up);
+        if (y1 >= MEAS_H - 1) m.down = Math.max(m.down, safe.down);
+        if (x0 <= 0) m.left = Math.max(m.left, safe.left);
+        if (x1 >= MEAS_W - 1) m.right = Math.max(m.right, safe.right);
+        return m;
       }
     } catch (e) {
       /* keep the conservative fallback */
     }
+    return safeExtent();
+  }
+
+  function remember(key, ext) {
     if (extentCache.size > 48) extentCache.clear();
     extentCache.set(key, ext);
     return ext;
+  }
+
+  function inkCanon(mc, seed, dude) {
+    const MR = { mark: rngFor(seed, "mark"), body: rngFor(seed, "body"), colour: rngFor(seed, "colour"), hair: rngFor(seed, "hair") };
+    figureInk(mc, MR, dude, 0, 0, CANON);
+  }
+
+  function figureExtent(seed, dude) {
+    const key = `${seed >>> 0}:`;
+    const hit = extentCache.get(key);
+    if (hit) return hit;
+    return remember(key, measureExtent((mc) => inkCanon(mc, seed, dude)));
   }
 
   // A moving dude needs room for the tallest thing he does, not for the pose
   // he happens to be in when the page loads. So he is measured at several
   // points around his cycle and given the union — otherwise the frame he
   // waves in is the frame his hand goes off the top of the sheet.
+  //
+  // The union is what is kept, not the ten poses it came from: the only thing
+  // that ever asks is the animation, it asks for one motion at a time, and a
+  // resize or a press of `a` asks for the same one again. Keeping the whole
+  // answer under one key means the second ask is free where before a cache of
+  // ten entries per dude was cleared out from under itself every few presses.
   function motionExtent(seed, dude, kind) {
+    const key = `${seed >>> 0}:${kind}`;
+    const hit = extentCache.get(key);
+    if (hit) return hit;
     const was = MOTION;
     const ext = { up: 0, down: 0, left: 0, right: 0 };
     try {
@@ -4983,7 +5042,7 @@
       const N = 10;
       for (let i = 0; i < N; i++) {
         MOTION = motionAt(kind, i / N);
-        const e = figureExtent(seed, dude, `${kind}${i}`);
+        const e = measureExtent((mc) => inkCanon(mc, seed, dude));
         ext.up = Math.max(ext.up, e.up);
         ext.down = Math.max(ext.down, e.down);
         ext.left = Math.max(ext.left, e.left);
@@ -4992,7 +5051,7 @@
     } finally {
       MOTION = was;
     }
-    return ext;
+    return remember(key, ext);
   }
 
   function drawDude(c, R, dude, w, h, seed) {
@@ -5318,6 +5377,35 @@
   // transformed. The rig moves and the pen goes over him again, so the line
   // boils the way a line does when a hand draws it twice, and the head turns
   // in space rather than skewing on the page.
+  //
+  // There is one sheet bitmap on the page and it is handed out again rather
+  // than made afresh for every dude. A sheet is the size of the window in
+  // device pixels — five megabytes on a phone, more on a big screen — and a
+  // browser does not hand the memory back the moment the last dude that owned
+  // one is dropped. Twenty dudes used to mean twenty of them queued up for
+  // collection, and a phone that runs out of room for canvases does not slow
+  // down politely: it starts handing back blank ones. Only one book is ever
+  // drawn from, so one sheet is all there is to own.
+  let sheetCv = null;
+  function sheetCanvas(pxW, pxH) {
+    if (!sheetCv) sheetCv = document.createElement("canvas");
+    // Assigning either dimension takes a whole new buffer, so it is only
+    // done when the window has actually changed size. paper() wipes the
+    // sheet before it draws, so the old dude never shows through.
+    if (sheetCv.width !== pxW || sheetCv.height !== pxH) {
+      sheetCv.width = pxW;
+      sheetCv.height = pxH;
+    }
+    return sheetCv;
+  }
+  // A still dude has no sheet bitmap to keep, and a phone should not be
+  // holding a window's worth of pixels for a picture that is not moving.
+  function dropSheet() {
+    if (!sheetCv) return;
+    sheetCv.width = 0;
+    sheetCv.height = 0;
+  }
+
   function makeAnimation(canvasEl, seed, dude, w, h, dpr, kind) {
     const foot = footerLayout(w, h, true);
     const ext = motionExtent(seed, dude, kind);
@@ -5350,9 +5438,7 @@
     box.h = Math.min(h, snap(cy + ext.down * k + pad, true)) - box.y;
 
     // ---- the sheet, once ----
-    const bd = document.createElement("canvas");
-    bd.width = Math.round(w * dpr);
-    bd.height = Math.round(h * dpr);
+    const bd = sheetCanvas(Math.round(w * dpr), Math.round(h * dpr));
     const bc = bd.getContext("2d", { willReadFrequently: true });
     bc.setTransform(dpr, 0, 0, dpr, 0, 0);
     bc.__dpr = dpr;
@@ -5521,6 +5607,7 @@
     lastCssH = cssH;
     lastDpr = dpr;
     if (PLATE) {
+      dropSheet();
       drawPlate(ctx, cssW, cssH, seed);
       placeHits(null);
     } else if (animOn) {
@@ -5535,6 +5622,7 @@
       book.draw(forcedPhase ?? 0, 0);
       if (forcedPhase === null && !raf) raf = requestAnimationFrame(tick);
     } else {
+      dropSheet();
       placeHits(drawDude(ctx, R, dude, cssW, cssH, seed));
     }
     count += 1;
