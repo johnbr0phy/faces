@@ -69,13 +69,12 @@ a sheet; `scripts/anim.sh <seed> <motion>` grabs the frames of one cycle and
 
 The drawings are after [mannay](https://x.com/mannay/status/2087522034351796728).
 
-## What's next
+## WIP
 
-Walking around him. The skull already turns; this is just more yaw — around
-once, back of the potato, face gone, hair still there. It is not on the page.
-There is a preview at [v2](https://johnbr0phy.github.io/faces/v2.html). The
-slider is a slider, which is why it is not the page. Arrow keys work there
-too. `?yaw=90` insists.
+These are not the page. The page is still [a dude](https://johnbr0phy.github.io/faces/).
 
-An aisle of them — the weekly shop, several dudes standing in a place — is
-also on the bench. Same paper, same pen, not ready.
+- [v2](https://johnbr0phy.github.io/faces/v2.html) — walk around him. The skull
+  already turns; this is more yaw. Slider at the top, arrow keys, or `?yaw=90`.
+- [aisle](https://johnbr0phy.github.io/faces/aisle.html) — drop a few of them
+  in the weekly shop. Space for another aisle, `d` to drop them again, `n` for
+  how many. Same paper, same pen, not finished.
