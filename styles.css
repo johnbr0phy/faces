@@ -31,7 +31,8 @@ html, body {
 
 #page,
 #scene,
-#plate {
+#plate,
+.sheet canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -39,6 +40,8 @@ html, body {
 }
 
 #plate {
+  position: absolute;
+  inset: 0;
   cursor: pointer;
 }
 

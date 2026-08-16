@@ -14,8 +14,8 @@
   };
 
   const FPS = 12;
-  const COLS = 6;
-  const ROWS = 8;
+  let COLS = 6;
+  let ROWS = 8;
   const LOOK = "look";
   const PERIOD = D.MOTION_PERIOD[LOOK] || 5;
 
@@ -182,24 +182,43 @@
     raf = 0;
   }
 
+  function sheetSize() {
+    const vv = window.visualViewport;
+    const w = Math.round((vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 720);
+    const h = Math.round((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 920);
+    return { w: Math.max(280, w), h: Math.max(320, h) };
+  }
+
+  function chooseGrid(w, availH) {
+    const aspect = w / Math.max(160, availH);
+    let cols = Math.round(Math.sqrt(48 * aspect));
+    cols = Math.max(4, Math.min(14, cols));
+    let rows = Math.max(4, Math.round(48 / cols));
+    if (cols * rows > 56) rows = Math.max(4, rows - 1);
+    COLS = cols;
+    ROWS = rows;
+  }
+
   function layFaces(w, h) {
     const rng0 = D.rngFor(seed, "paper");
     const foot = chromeLayout(w, h);
-    const band = h - foot.top + 10;
+    const band = Math.max(36, h - foot.top + 8);
+    chooseGrid(w, h - band);
     const cw = w / COLS;
     const ch = (h - band) / ROWS;
     const out = [];
     for (let r = 0; r < ROWS; r++) {
-      const rowDx = rng0.f(-10, 10);
-      const rowDy = rng0.f(-7, 7);
+      const rowDx = rng0.f(-cw * 0.04, cw * 0.04);
+      const rowDy = rng0.f(-ch * 0.04, ch * 0.04);
       const rowS = rng0.f(0.96, 1.04);
       for (let col = 0; col < COLS; col++) {
         const idx = r * COLS + col;
         const dude = D.makeDude(D.rngFor(seed, "person", idx));
         const rng = D.rngFor(seed, "mark", idx);
-        const s = Math.min(cw, ch) * rng.f(0.305, 0.345) * rowS;
-        const cx = Math.max(s * 1.15, Math.min(w - s * 1.15, cw * (col + 0.5) + rowDx + rng.f(-7, 7)));
-        const cy = Math.max(s * 1.2, Math.min(h - band - s * 0.35, 18 + ch * (r + 0.5) + rowDy + rng.f(-8, 8)));
+        // Fill the cell with a head. The body is not drawn.
+        const s = Math.min(cw, ch) * rng.f(0.38, 0.44) * rowS;
+        const cx = Math.max(s * 1.15, Math.min(w - s * 1.15, cw * (col + 0.5) + rowDx + rng.f(-cw * 0.03, cw * 0.03)));
+        const cy = Math.max(s * 1.2, Math.min(h - band - s * 0.4, 12 + ch * (r + 0.5) + rowDy + rng.f(-ch * 0.03, ch * 0.03)));
         out.push({
           idx,
           dude,
@@ -230,9 +249,9 @@
 
   async function buildSheet(id) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const rect = canvas.getBoundingClientRect();
-    const cssW = Math.max(280, Math.round(rect.width || canvas.clientWidth || 720));
-    const cssH = Math.max(320, Math.round(rect.height || canvas.clientHeight || 920));
+    const { w: cssW, h: cssH } = sheetSize();
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     lastCssW = cssW;
@@ -343,9 +362,7 @@
   function onResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      const r = canvas.getBoundingClientRect();
-      const w = Math.round(r.width);
-      const h = Math.round(r.height);
+      const { w, h } = sheetSize();
       if (Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 24) return;
       lastW = w;
       lastH = h;
@@ -355,9 +372,9 @@
   window.addEventListener("resize", onResize);
   window.addEventListener("orientationchange", onResize);
   {
-    const r = canvas.getBoundingClientRect();
-    lastW = Math.round(r.width);
-    lastH = Math.round(r.height);
+    const { w, h } = sheetSize();
+    lastW = w;
+    lastH = h;
   }
   render(seed);
 })();
