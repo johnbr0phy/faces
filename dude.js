@@ -1,6 +1,6 @@
 (() => {
   const canvas = document.getElementById("page");
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas ? canvas.getContext("2d") : null;
   const tallyEl = document.getElementById("tally");
   const btn = document.getElementById("another");
 
@@ -123,6 +123,10 @@
   // the nib wanders through, so the ink is redrawn rather than replayed, while
   // every structural decision about the dude stays exactly where it was.
   let BOIL = 0;
+  // Extra turn the slider asks for, on top of the way he already holds his
+  // head. The skull is already a 3D thing, so this is just more yaw —
+  // around once, back of the potato, face gone, hair still there.
+  let VIEW_YAW = 0;
 
   const TAU = Math.PI * 2;
 
@@ -307,18 +311,659 @@
         leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
       };
     },
+
+    // Almost still. The face is the action — a lift through the chest and a
+    // little sway, the way someone stands when they have just heard something
+    // good and have not decided what to do with their hands yet.
+    smile: (t) => {
+      const bounce = Math.abs(Math.sin(t * TAU));
+      const sway = holdSin(t, 0.55);
+      return {
+        yaw: sway * 0.08,
+        pitch: -0.06 - bounce * 0.02,
+        roll: sway * 0.03,
+        bob: -bounce * 0.03,
+        sway: sway * 0.04,
+        lean: sway * 0.03,
+        arm: [
+          { ex: -0.02, ey: -0.05, hx: -0.04, hy: -0.08 },
+          { ex: 0.02, ey: -0.05, hx: 0.04, hy: -0.08 },
+        ],
+        leg: [
+          { kx: 0.01, ky: 0, fx: 0.02, fy: 0 },
+          { kx: -0.01, ky: 0, fx: -0.02, fy: 0 },
+        ],
+      };
+    },
+
+    // Head folded in, shoulders up, a shake through the chest. Not a cartoon
+    // fountain — a person trying not to, and failing a little.
+    cry: (t) => {
+      const sob = Math.abs(Math.sin(t * TAU * 2));
+      const shake = Math.sin(t * TAU * 7) * 0.014;
+      return {
+        yaw: shake,
+        pitch: 0.22 + sob * 0.05,
+        roll: shake * 1.6,
+        bob: sob * 0.035,
+        sway: shake * 0.4,
+        sh: -0.22 - sob * 0.1,
+        arm: [
+          { ex: -0.1, ey: -0.22, hx: -0.06, hy: -0.18 },
+          { ex: 0.08, ey: 0.05, hx: 0.05, hy: 0.08 },
+        ],
+        leg: [
+          { kx: 0.02, ky: 0.04, fx: 0.03, fy: 0 },
+          { kx: -0.02, ky: 0.02, fx: -0.03, fy: 0 },
+        ],
+      };
+    },
+
+    // A yes. The head goes down and comes back; the body barely notices.
+    nod: (t) => {
+      const n = Math.sin(t * TAU * 2);
+      const dip = Math.max(0, n);
+      return {
+        pitch: dip * 0.28,
+        bob: dip * 0.03,
+        arm: [
+          { ex: 0, ey: 0, hx: 0, hy: dip * 0.03 },
+          { ex: 0, ey: 0, hx: 0, hy: dip * 0.03 },
+        ],
+        leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+      };
+    },
+
+    // One arm out, finger first. The rest of him turns to back the point.
+    point: (t) => {
+      const hold = t < 0.15 ? t / 0.15 : t < 0.8 ? 1 : Math.max(0, 1 - (t - 0.8) / 0.2);
+      const e = hold * hold * (3 - 2 * hold);
+      return {
+        yaw: e * 0.22,
+        roll: -e * 0.05,
+        lean: e * 0.08,
+        arm: [
+          { ex: -0.04, ey: 0.04, hx: -0.08, hy: 0.06 },
+          { ex: e * 0.55, ey: -e * 0.35, hx: e * 1.15, hy: -e * 0.55 },
+        ],
+        leg: [
+          { kx: 0.02, ky: 0, fx: 0.04, fy: 0 },
+          { kx: -0.02, ky: 0, fx: -0.03, fy: 0 },
+        ],
+      };
+    },
+
+    // Both hands find each other in front of the chest and meet, twice.
+    clap: (t) => {
+      const meet = Math.max(0, Math.sin(t * TAU * 2));
+      const k = meet * meet;
+      return {
+        pitch: -k * 0.04,
+        bob: -k * 0.02,
+        arm: [
+          { ex: k * 0.22, ey: -k * 0.35, hx: k * 0.55, hy: -k * 0.72 },
+          { ex: -k * 0.22, ey: -k * 0.35, hx: -k * 0.55, hy: -k * 0.72 },
+        ],
+        leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+      };
+    },
+
+    // A hand goes up to the crown and works a spot. The head tips into it.
+    scratch: (t) => {
+      const up = t < 0.2 ? t / 0.2 : t < 0.85 ? 1 : Math.max(0, 1 - (t - 0.85) / 0.15);
+      const itch = Math.sin(t * TAU * 4);
+      return {
+        yaw: 0.12 + itch * 0.04,
+        roll: -0.1,
+        pitch: 0.1,
+        arm: [
+          { ex: -0.04, ey: 0.05, hx: -0.06, hy: 0.06 },
+          { ex: 0.18 * up, ey: -1.15 * up, hx: 0.22 * up + itch * 0.08, hy: -1.85 * up },
+        ],
+        leg: [{ kx: 0.02, ky: 0, fx: 0.02, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+      };
+    },
+
+    // Knees bend, seat drops, he stays there a beat, then stands.
+    crouch: (t) => {
+      const k = t < 0.2 ? t / 0.2 : t < 0.72 ? 1 : Math.max(0, 1 - (t - 0.72) / 0.28);
+      const e = k * k * (3 - 2 * k);
+      return {
+        pitch: e * 0.14,
+        bob: e * 0.38,
+        arm: [
+          { ex: -e * 0.08, ey: e * 0.12, hx: -e * 0.12, hy: e * 0.18 },
+          { ex: e * 0.08, ey: e * 0.12, hx: e * 0.12, hy: e * 0.18 },
+        ],
+        leg: [
+          { kx: -e * 0.06, ky: e * 0.18, fx: -e * 0.04, fy: -e * 0.08 },
+          { kx: e * 0.06, ky: e * 0.18, fx: e * 0.04, fy: -e * 0.08 },
+        ],
+      };
+    },
+
+    // One leg flicks out and comes home. The arms go out for the balance.
+    kick: (t) => {
+      const k = lift(t);
+      return {
+        yaw: -k * 0.08,
+        lean: -k * 0.1,
+        arm: [
+          { ex: -k * 0.16, ey: -k * 0.12, hx: -k * 0.22, hy: -k * 0.18 },
+          { ex: k * 0.12, ey: k * 0.06, hx: k * 0.16, hy: k * 0.08 },
+        ],
+        leg: [
+          { kx: 0.03, ky: 0.04, fx: 0.04, fy: 0 },
+          { kx: k * 0.12, ky: -k * 0.18, fx: k * 0.35, fy: -k * 0.42 },
+        ],
+      };
+    },
+
+    // Both arms go up and a little back. A morning thing.
+    stretch: (t) => {
+      const k = t < 0.22 ? t / 0.22 : t < 0.68 ? 1 : Math.max(0, 1 - (t - 0.68) / 0.32);
+      const e = k * k * (3 - 2 * k);
+      return {
+        pitch: -e * 0.16,
+        bob: -e * 0.04,
+        sh: -e * 0.12,
+        arm: [
+          { ex: -e * 0.22, ey: -e * 1.15, hx: -e * 0.18, hy: -e * 2.15 },
+          { ex: e * 0.22, ey: -e * 1.15, hx: e * 0.18, hy: -e * 2.15 },
+        ],
+        leg: [
+          { kx: -0.02, ky: 0, fx: -0.03, fy: 0 },
+          { kx: 0.02, ky: 0, fx: 0.03, fy: 0 },
+        ],
+      };
+    },
+
+    // From the waist. The head arrives last and stays down a moment.
+    bow: (t) => {
+      const k = t < 0.25 ? t / 0.25 : t < 0.62 ? 1 : Math.max(0, 1 - (t - 0.62) / 0.38);
+      const e = k * k * (3 - 2 * k);
+      return {
+        pitch: e * 0.42,
+        bob: e * 0.12,
+        lean: 0,
+        arm: [
+          { ex: e * 0.06, ey: e * 0.16, hx: e * 0.04, hy: e * 0.22 },
+          { ex: -e * 0.06, ey: e * 0.16, hx: -e * 0.04, hy: e * 0.22 },
+        ],
+        leg: [
+          { kx: 0.02, ky: e * 0.04, fx: 0.03, fy: 0 },
+          { kx: -0.02, ky: e * 0.04, fx: -0.03, fy: 0 },
+        ],
+      };
+    },
+
+    // Hand to the chin, head a little off. He is pretending to consider.
+    think: (t) => {
+      const k = t < 0.2 ? t / 0.2 : t < 0.82 ? 1 : Math.max(0, 1 - (t - 0.82) / 0.18);
+      const e = k * k * (3 - 2 * k);
+      const tap = Math.sin(t * TAU * 3) * e;
+      return {
+        yaw: e * 0.14,
+        pitch: e * 0.08,
+        roll: -e * 0.06,
+        arm: [
+          { ex: -0.03, ey: 0.04, hx: -0.06, hy: 0.05 },
+          { ex: e * 0.16, ey: -e * 0.55, hx: e * 0.12 + tap * 0.04, hy: -e * 0.85 },
+        ],
+        leg: [
+          { kx: 0.03, ky: 0.02, fx: 0.04, fy: 0 },
+          { kx: 0, ky: 0, fx: 0, fy: 0 },
+        ],
+      };
+    },
+
+    // Both arms up, a greeting, not a stretch — they bounce at the top.
+    hail: (t) => {
+      const k = t < 0.16 ? t / 0.16 : 1;
+      const e = k * k * (3 - 2 * k);
+      const w = Math.sin(t * TAU * 2) * e;
+      return {
+        pitch: -e * 0.05,
+        bob: -Math.abs(w) * 0.02,
+        arm: [
+          { ex: -e * 0.28, ey: -e * 0.95, hx: -e * 0.45 + w * 0.12, hy: -e * 1.85 },
+          { ex: e * 0.28, ey: -e * 0.95, hx: e * 0.45 + w * 0.12, hy: -e * 1.85 },
+        ],
+        leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+      };
+    },
+
+    // Weight late, a step that does not quite land where he meant.
+    stagger: (t) => {
+      const w = holdSin(t, 0.35);
+      const hitch = Math.sin(t * TAU * 3);
+      return {
+        yaw: w * 0.12,
+        roll: -w * 0.14,
+        pitch: Math.abs(w) * 0.06,
+        bob: Math.abs(w) * 0.05,
+        sway: w * 0.22,
+        lean: w * 0.18,
+        arm: [
+          { ex: -w * 0.14, ey: -Math.abs(w) * 0.12, hx: -w * 0.22 + hitch * 0.05, hy: -Math.abs(w) * 0.18 },
+          { ex: w * 0.14, ey: -Math.abs(w) * 0.12, hx: w * 0.22 + hitch * 0.05, hy: -Math.abs(w) * 0.18 },
+        ],
+        leg: [
+          { kx: w * 0.05, ky: Math.max(0, w) * 0.08, fx: w * 0.1, fy: -Math.max(0, w) * 0.1 },
+          { kx: w * 0.05, ky: Math.max(0, -w) * 0.08, fx: w * 0.1, fy: -Math.max(0, -w) * 0.1 },
+        ],
+      };
+    },
+
+    // A small jump on the spot, twice, not the big leave-the-ground one.
+    hop: (t) => {
+      const h = lift(t * 2);
+      const hang = Math.pow(h, 0.6);
+      return {
+        ground: 1 - hang,
+        pitch: -hang * 0.06,
+        bob: -hang * 0.42,
+        arm: [
+          { ex: -hang * 0.08, ey: -hang * 0.22, hx: -hang * 0.1, hy: -hang * 0.45 },
+          { ex: hang * 0.08, ey: -hang * 0.22, hx: hang * 0.1, hy: -hang * 0.45 },
+        ],
+        leg: [
+          { kx: -hang * 0.02, ky: -hang * 0.08, fx: 0, fy: -hang * 0.12 },
+          { kx: hang * 0.02, ky: -hang * 0.08, fx: 0, fy: -hang * 0.12 },
+        ],
+      };
+    },
+
+    // He leans out from behind something that is not there.
+    peek: (t) => {
+      const k = holdSin(t, 0.4);
+      const e = Math.abs(k);
+      return {
+        yaw: k * 0.42,
+        roll: k * 0.08,
+        pitch: -e * 0.04,
+        sway: k * 0.14,
+        lean: k * 0.22,
+        arm: [
+          { ex: k * 0.06, ey: 0, hx: k * 0.1, hy: e * 0.04 },
+          { ex: k * 0.06, ey: 0, hx: k * 0.1, hy: e * 0.04 },
+        ],
+        leg: [
+          { kx: 0, ky: 0, fx: -k * 0.05, fy: 0 },
+          { kx: 0, ky: 0, fx: k * 0.05, fy: 0 },
+        ],
+      };
+    },
+
+    // A walk that has decided not to be seen. Knees more, arms less, head in.
+    sneak: (t) => {
+      const a = lift(t);
+      const b = lift(t + 0.5);
+      const w = swing(t);
+      return {
+        yaw: w * 0.04,
+        pitch: 0.12,
+        bob: 0.16 - Math.abs(Math.sin(t * TAU)) * 0.04,
+        sway: w * 0.06,
+        lean: w * 0.04,
+        arm: [
+          { ex: -w * 0.03, ey: 0.08, hx: -w * 0.06, hy: 0.1 },
+          { ex: w * 0.03, ey: 0.08, hx: w * 0.06, hy: 0.1 },
+        ],
+        leg: [
+          { kx: -a * 0.04, ky: -a * 0.18 + b * 0.03, fx: -a * 0.03, fy: -a * 0.16 },
+          { kx: b * 0.04, ky: -b * 0.18 + a * 0.03, fx: b * 0.03, fy: -b * 0.16 },
+        ],
+      };
+    },
+
+    // Mouth open is the face's job. The body just reaches and tips back.
+    yawn: (t) => {
+      const k = t < 0.25 ? t / 0.25 : t < 0.6 ? 1 : Math.max(0, 1 - (t - 0.6) / 0.4);
+      const e = k * k * (3 - 2 * k);
+      return {
+        pitch: -e * 0.22,
+        sh: -e * 0.18,
+        bob: -e * 0.03,
+        arm: [
+          { ex: -e * 0.2, ey: -e * 0.85, hx: -e * 0.16, hy: -e * 1.55 },
+          { ex: e * 0.08, ey: e * 0.06, hx: e * 0.05, hy: e * 0.08 },
+        ],
+        leg: [
+          { kx: 0, ky: 0, fx: 0, fy: 0 },
+          { kx: 0, ky: 0, fx: 0, fy: 0 },
+        ],
+      };
+    },
+
+    // Arms up, a bounce on the balls of the feet. He has decided this is good.
+    cheer: (t) => {
+      const b = Math.abs(Math.sin(t * TAU * 2));
+      return {
+        pitch: -0.08 - b * 0.04,
+        bob: -b * 0.1,
+        arm: [
+          { ex: -0.32, ey: -1.05 - b * 0.08, hx: -0.4, hy: -2.05 - b * 0.12 },
+          { ex: 0.32, ey: -1.05 - b * 0.08, hx: 0.4, hy: -2.05 - b * 0.12 },
+        ],
+        leg: [
+          { kx: -0.02, ky: -b * 0.03, fx: 0, fy: -b * 0.06 },
+          { kx: 0.02, ky: -b * 0.03, fx: 0, fy: -b * 0.06 },
+        ],
+      };
+    },
+
+    // He cannot stand still. Weight shifts, a hand finds a pocket, the head ticks.
+    fidget: (t) => {
+      const w = holdSin(t, 0.5);
+      const tick = Math.sin(t * TAU * 5);
+      return {
+        yaw: w * 0.08 + tick * 0.02,
+        roll: -w * 0.05,
+        bob: Math.abs(w) * 0.02,
+        sway: w * 0.07,
+        lean: w * 0.05,
+        arm: [
+          { ex: -0.04 + w * 0.03, ey: 0.06, hx: -0.08, hy: 0.08 + Math.abs(tick) * 0.03 },
+          { ex: 0.05, ey: -0.08 + w * 0.04, hx: 0.06, hy: -0.12 },
+        ],
+        leg: [
+          { kx: w * 0.02, ky: 0.02, fx: w * 0.03, fy: 0 },
+          { kx: w * 0.02, ky: 0, fx: w * 0.03, fy: 0 },
+        ],
+      };
+    },
   };
 
   const MOTION_NAMES = Object.keys(MOTIONS);
 
   // How long one cycle takes, in seconds. A walk is a stroll, a look is a linger.
-  const MOTION_PERIOD = { walk: 1.18, wave: 1.85, jump: 1.7, look: 5.0, dance: 1.7, shrug: 2.8 };
+  const MOTION_PERIOD = {
+    walk: 1.18, wave: 1.85, jump: 1.7, look: 5.0, dance: 1.7, shrug: 2.8,
+    smile: 2.4, cry: 1.9, nod: 1.5, point: 2.2, clap: 1.15, scratch: 2.0,
+    crouch: 2.4, kick: 1.15, stretch: 2.6, bow: 2.3, think: 3.2, hail: 1.8,
+    stagger: 2.1, hop: 0.95, peek: 2.8, sneak: 1.5, yawn: 2.7, cheer: 1.4,
+    fidget: 2.0,
+  };
 
   function motionAt(kind, t) {
     const f = MOTIONS[kind];
     if (!f) return REST;
     return { ...REST, ...f(((t % 1) + 1) % 1), on: true };
   }
+
+  // ---------- muscles + will ----------
+  //
+  // algovivo (Rojas, Sifakis, Kavan) does not push vertices with a force
+  // function. A muscle is a spring whose rest length the creature is allowed
+  // to change: a = 1 is slack, a < 1 is "I want this shorter", and the body
+  // is whatever configuration makes the energy
+  //
+  //   E = k/2 * (l / (a * l0) - 1)^2
+  //
+  // sit as low as it can. The interesting part is not the FEM — it is that
+  // locomotion is a stream of a[] commands, not a clip.
+  //
+  // We already have a 3D stick and a silhouette grown around it. Replacing
+  // that with neo-Hookean triangles would throw away the drawing. So the
+  // muscles live ON the stick. Each one pulls a named joint. The will
+  // writes a[]. The pose is the damped answer to those commands — one
+  // implicit step, the way their integrator takes one. He decides what
+  // to do; the muscles are how he does it.
+  const MUSCLE_NAMES = [
+    "lRaise", "rRaise",
+    "lElbow", "rElbow",
+    "lReach", "rReach",
+    "lKnee", "rKnee",
+    "lStep", "rStep",
+    "shrug",
+    "leanL", "leanR",
+    "lookL", "lookR",
+    "lookDown", "lookUp",
+    "bobUp",
+  ];
+
+  function slackA() {
+    const a = {};
+    MUSCLE_NAMES.forEach((n) => { a[n] = 1; });
+    return a;
+  }
+
+  // How hard a full contraction pulls, in the same units MOTION already uses.
+  function poseFromA(a, gain) {
+    const p = (name, amt) => {
+      const u = 1 - (a[name] == null ? 1 : a[name]);
+      return amt * u * (gain[name] == null ? 1 : gain[name]);
+    };
+    return {
+      on: true,
+      yaw: p("lookR", 0.52) - p("lookL", 0.52),
+      pitch: p("lookDown", 0.26) - p("lookUp", 0.12),
+      roll: (p("leanR", 0.08) - p("leanL", 0.08)),
+      bob: p("bobUp", 0.22) - p("lKnee", 0.04) - p("rKnee", 0.04),
+      sway: p("leanR", 0.16) - p("leanL", 0.16),
+      lean: p("leanR", 0.14) - p("leanL", 0.14),
+      sh: -p("shrug", 0.42),
+      ground: 1 - p("bobUp", 0.85),
+      arm: [
+        {
+          ex: -p("lReach", 0.12) - p("lRaise", 0.16),
+          ey: -p("lRaise", 0.95) - p("lElbow", 0.22),
+          hx: -p("lReach", 0.28) - p("lRaise", 0.32),
+          hy: -p("lRaise", 1.7) - p("lElbow", 0.55),
+        },
+        {
+          ex: p("rReach", 0.12) + p("rRaise", 0.16),
+          ey: -p("rRaise", 0.95) - p("rElbow", 0.22),
+          hx: p("rReach", 0.28) + p("rRaise", 0.32),
+          hy: -p("rRaise", 1.7) - p("rElbow", 0.55),
+        },
+      ],
+      leg: [
+        {
+          kx: -p("lStep", 0.04) + p("rStep", 0.03),
+          ky: -p("lKnee", 0.14) + p("rKnee", 0.03),
+          fx: -p("lStep", 0.03) + p("rStep", 0.04),
+          fy: -p("lKnee", 0.22),
+        },
+        {
+          kx: p("rStep", 0.04) - p("lStep", 0.03),
+          ky: -p("rKnee", 0.14) + p("lKnee", 0.03),
+          fx: p("rStep", 0.03) - p("lStep", 0.04),
+          fy: -p("rKnee", 0.22),
+        },
+      ],
+    };
+  }
+
+  // Intentions are recipes of a(t). 1 is slack. Smaller is a pull.
+  function recipeA(intent, t, n) {
+    const a = slackA();
+    const g = Math.sin((t + n.phase) * TAU * n.tempo);
+    const L = Math.max(0, Math.sin((t + n.phase) * TAU * n.tempo));
+    const R = Math.max(0, Math.sin((t + n.phase + 0.5) * TAU * n.tempo));
+    const hold = holdSin(t * n.tempo * 0.35 + n.phase, 0.45);
+    if (intent === "walk") {
+      a.lKnee = 1 - L * 0.62;
+      a.rKnee = 1 - R * 0.62;
+      a.lStep = 1 - L * 0.35;
+      a.rStep = 1 - R * 0.35;
+      a.lRaise = 1 - R * 0.28;
+      a.rRaise = 1 - L * 0.28;
+      a.leanL = 1 - R * 0.22;
+      a.leanR = 1 - L * 0.22;
+      a.bobUp = 1 - Math.abs(Math.sin((t + n.phase) * TAU * n.tempo * 2)) * 0.18;
+    } else if (intent === "wave") {
+      const f = Math.sin((t + n.phase) * TAU * n.tempo * 1.6);
+      a.rRaise = 0.22;
+      a.rElbow = 0.45 + f * 0.2;
+      a.rReach = 0.4 - Math.abs(f) * 0.15;
+      a.leanR = 0.78;
+      a.lookR = 0.72;
+    } else if (intent === "jump") {
+      const u = ((t * n.tempo * 0.55) % 1 + 1) % 1;
+      let crouch = 0;
+      let air = 0;
+      if (u < 0.18) crouch = u / 0.18;
+      else if (u < 0.28) crouch = 1;
+      else air = Math.sin(((u - 0.28) / 0.55) * Math.PI);
+      const hang = Math.max(0, Math.pow(air, 0.55));
+      a.lKnee = a.rKnee = 1 - crouch * 0.55 - hang * 0.2;
+      a.lRaise = a.rRaise = 1 - crouch * 0.2 - hang * 0.7;
+      a.bobUp = 1 - hang * 0.95;
+      a.lookDown = 1 - crouch * 0.4;
+    } else if (intent === "look") {
+      a.lookL = 1 - Math.max(0, -hold) * 0.85;
+      a.lookR = 1 - Math.max(0, hold) * 0.85;
+      a.leanL = 1 - Math.max(0, -hold) * 0.2;
+      a.leanR = 1 - Math.max(0, hold) * 0.2;
+    } else if (intent === "dance") {
+      a.leanL = 1 - Math.max(0, -hold) * 0.7;
+      a.leanR = 1 - Math.max(0, hold) * 0.7;
+      a.lRaise = 1 - Math.max(0, -hold) * 0.55 - Math.abs(g) * 0.1;
+      a.rRaise = 1 - Math.max(0, hold) * 0.55 - Math.abs(g) * 0.1;
+      a.bobUp = 1 - Math.abs(Math.sin((t + n.phase) * TAU * n.tempo * 2)) * 0.22;
+    } else if (intent === "shrug") {
+      a.shrug = 0.25;
+      a.lRaise = a.rRaise = 0.55;
+      a.lookDown = 0.55;
+    } else if (intent === "smile") {
+      a.lookUp = 0.72;
+      a.bobUp = 1 - Math.abs(g) * 0.08;
+      a.leanL = 1 - Math.max(0, -hold) * 0.12;
+      a.leanR = 1 - Math.max(0, hold) * 0.12;
+    } else if (intent === "cry") {
+      a.lookDown = 0.35;
+      a.shrug = 0.45;
+      a.lElbow = 0.55;
+      a.lRaise = 0.7;
+    }
+    return a;
+  }
+
+  function makeNerves(rng, person) {
+    const bag = [];
+    const add = (k, n) => {
+      for (let i = 0; i < n; i++) bag.push(k);
+    };
+    add("walk", 3);
+    add("look", 3);
+    add("rest", 2);
+    if (person.mood === "dour") {
+      add("shrug", 2);
+      add("cry", 2);
+      add("look", 2);
+    } else if (person.mood === "pleased") {
+      add("smile", 3);
+      add("wave", 2);
+      add("walk", 1);
+    } else if (person.mood === "amused") {
+      add("dance", 3);
+      add("wave", 2);
+      add("jump", 1);
+      add("smile", 2);
+    } else if (person.mood === "wary") {
+      add("look", 3);
+      add("shrug", 2);
+      add("rest", 2);
+    } else {
+      add("wave", 1);
+      add("smile", 1);
+    }
+    if (person.bearing === "cocky") {
+      add("dance", 2);
+      add("wave", 2);
+      add("jump", 1);
+    } else if (person.bearing === "slumped") {
+      add("rest", 2);
+      add("shrug", 2);
+    }
+    if (person.age === "old") {
+      add("look", 2);
+      add("walk", 1);
+    } else if (person.age === "young") {
+      add("jump", 2);
+      add("dance", 2);
+      add("wave", 1);
+    }
+    const gain = {};
+    MUSCLE_NAMES.forEach((n) => {
+      gain[n] = rng.f(0.62, 1.28);
+    });
+    // one side a bit weaker — nobody is even
+    if (rng.chance(0.7)) {
+      const side = rng.chance(0.5) ? "l" : "r";
+      ["Raise", "Elbow", "Knee"].forEach((part) => {
+        gain[side + part] *= rng.f(0.55, 0.85);
+      });
+    }
+    return {
+      seed: rng.seed,
+      bag,
+      tempo: rng.f(0.82, 1.22),
+      hold: rng.f(1.35, 3.4),
+      blend: rng.f(0.16, 0.38),
+      gain,
+      phase: rng.f(0, 1),
+    };
+  }
+
+  function makeWill(nerves) {
+    let clock = 0;
+    let intent = "rest";
+    let holdFor = nerves.hold;
+    let since = 0;
+    let pickN = 0;
+    const a = slackA();
+
+    const pick = (avoid) => {
+      pickN += 1;
+      const r = new Rng(hash32(nerves.seed, "will", pickN));
+      let choice = r.pick(nerves.bag);
+      if (avoid && nerves.bag.length > 1) {
+        let guard = 0;
+        while (choice === avoid && guard < 8) {
+          choice = r.pick(nerves.bag);
+          guard += 1;
+        }
+      }
+      return choice;
+    };
+
+    intent = pick();
+    if (intent === "rest") holdFor = nerves.hold * 0.7;
+
+    return {
+      intent() {
+        return intent;
+      },
+      nudge() {
+        intent = pick(intent);
+        since = 0;
+        holdFor = intent === "jump" ? 1.7 / nerves.tempo : nerves.hold * (intent === "rest" ? 0.7 : 1);
+      },
+      step(dt) {
+        clock += dt;
+        since += dt;
+        if (since >= holdFor) {
+          since = 0;
+          intent = pick(intent);
+          holdFor = intent === "jump" ? 1.7 / Math.max(0.5, nerves.tempo) : nerves.hold * (0.75 + (pickN % 5) * 0.08);
+          if (intent === "rest") holdFor *= 0.8;
+        }
+        const target = intent === "rest" ? slackA() : recipeA(intent, clock, nerves);
+        const k = 1 - Math.exp(-dt / Math.max(0.06, nerves.blend));
+        MUSCLE_NAMES.forEach((n) => {
+          a[n] += ((target[n] == null ? 1 : target[n]) - a[n]) * k;
+        });
+      },
+      pose() {
+        return poseFromA(a, nerves.gain);
+      },
+    };
+  }
+
+  let WILL = null;
 
   // ---------- seeded rng ----------
   function mulberry32(a) {
@@ -1114,10 +1759,20 @@
       const k = Math.max(0.42, 1 - this.pinch * d * d - this.skewW * d);
       p.x *= k * this.cheek;
       p.z *= 0.5 + 0.5 * k;
+      // The face lives in front of the ball. Without that, a side view is a
+      // lollipop: features pasted on the rim of a circle, no jaw, no occiput.
+      if (p.z > 0.02) {
+        const face = Math.max(0, p.z);
+        p.z += 0.22 * face;
+        if (p.y > 0.12) p.z += 0.16 * ((p.y - 0.12) / 0.88);
+      } else if (p.z < -0.05 && p.y < -0.1) {
+        p.z -= 0.12 * (-p.z);
+      }
       if (p.y > 0.22) {
         const t = (p.y - 0.22) / 0.78;
         p.x *= 1 + (this.jaw - 1) * t;
         p.y += this.chin * t;
+        p.z += this.chin * 0.45 * t;
       } else if (p.y < -0.35) {
         const t = (-0.35 - p.y) / 0.65;
         p.y *= 1 + (this.crown - 1) * t * 0.55;
@@ -1160,6 +1815,9 @@
       }
       const extras = [
         { x: 0, y: 0.98 + this.chin, z: 0.22 },
+        { x: 0, y: 0.82 + this.chin, z: 0.58 },
+        { x: 0, y: -0.12, z: 0.68 },
+        { x: 0, y: -0.72, z: -0.52 },
         { x: -0.58 * this.jaw, y: 0.74, z: 0.12 },
         { x: 0.58 * this.jaw, y: 0.74, z: 0.12 },
         { x: -0.72 * this.cheek, y: 0.08, z: 0.18 },
@@ -1640,7 +2298,7 @@
     inkFill(c, rng, flesh, PAPER, 1, 0.35);
     refibre(c, rng, flesh);
     if (nose.outer && nose.outer.length > 1) {
-      inkPoly(c, rng, nose.outer, { w: skull.s * 0.024, dry: 0.4, overshoot: false });
+      inkPoly(c, rng, nose.outer, { w: skull.s * 0.026, dry: 0.12, overshoot: false });
     }
   }
 
@@ -2830,7 +3488,7 @@
   //   * the base hooked to a random side. In every turned head the tip
   //     protrudes toward the near side and the nostril hooks BACK INTO the
   //     face. Getting that backwards is what made ours feel inside out.
-  function drawNose(c, rng, skull, style, heavy) {
+  function drawNose(c, rng, skull, style, heavy, hold) {
     const lock = lockRng(rng, "nose");
     const s = skull.s;
     // The nose is never the darkest mark on the face. The head outline runs
@@ -2887,7 +3545,21 @@
     const px0 = -ay;
     const py0 = ax;
     const latDot = outX * px0 + outY * py0;
-    const near = Math.abs(latDot) > s * 0.015 ? Math.sign(latDot) : lock.sign();
+    // The long edge is the outside of the turn. A tiny threshold made
+    // `near` flip every time a walk or a look ticked the head through
+    // face-on, so the hook jumped sides — or collapsed into a crack and
+    // the paper cover wiped it. Hold the last side until the tip is
+    // clearly the other way.
+    const outLen = Math.hypot(outX, outY);
+    const flip = s * 0.07;
+    if (hold && hold._noseNear == null) {
+      hold._noseNear = Math.abs(latDot) > s * 0.02
+        ? Math.sign(latDot)
+        : (Math.abs(skull.yaw) > 0.08 ? Math.sign(skull.yaw) : lock.sign());
+    } else if (hold && Math.abs(latDot) > flip && Math.sign(latDot) !== hold._noseNear) {
+      hold._noseNear = Math.sign(latDot);
+    }
+    const near = (hold && hold._noseNear) || (Math.abs(latDot) > s * 0.02 ? Math.sign(latDot) : lock.sign());
     const back = -near;
     const off = lock.f(-0.035, 0.035) * s + near * s * lock.f(0.02, 0.12);
 
@@ -2903,6 +3575,10 @@
     };
 
     if (style === "none") return { ax, ay, browP, base: drop, outer: null };
+
+    // Face-on, the tip has nothing to project: a profile hook becomes a
+    // crack, and the cover pass wipes it. Draw the knuckle instead.
+    const drawStyle = (outLen < s * 0.055 && style !== "nostrils") ? "silhouette" : style;
 
     let outer = null;
     let bottom = drop;
@@ -2942,7 +3618,7 @@
       return pts;
     };
 
-    if (style === "wedge") {
+    if (drawStyle === "wedge") {
       // narrow at the top, WIDE at the base — the base is most of the shape
       const top = A(0, back * s * lock.f(0.0, 0.035));
       const wideB = Math.max(baseRun, drop * lock.f(0.4, 0.62));
@@ -2960,7 +3636,7 @@
       }
       if (lock.chance(0.5)) nostril(A(drop - s * 0.02, back * wideB * 0.45), lock.f(0.015, 0.026));
       outer = leadRun;
-    } else if (style === "column") {
+    } else if (drawStyle === "column") {
       // a squared U with unequal legs: a long near side, a base, and a far
       // side that only exists in the bottom third
       const gap = s * lock.f(0.045, 0.085);
@@ -2972,7 +3648,7 @@
       paint(run, { w, dry: 0.3, doubled: lock.chance(0.2) });
       if (lock.chance(0.5)) nostril(A(drop - s * 0.02, near * gap + back * runB * 0.75), lock.f(0.014, 0.026));
       outer = run;
-    } else if (style === "hook") {
+    } else if (drawStyle === "hook") {
       const bend = lock.f(0.03, 0.09) * s * near;
       const run = [];
       for (let i = 0; i <= 7; i++) {
@@ -2987,7 +3663,7 @@
       if (lock.chance(0.6)) nostril(run[run.length - 1], lock.f(0.015, 0.028));
       bottom = drop + s * 0.1;
       outer = run;
-    } else if (style === "snub") {
+    } else if (drawStyle === "snub") {
       // a tip that is drawn round, not a stick with a dot under it
       const d2 = drop * lock.f(0.72, 0.88);
       const r = Math.max(s * 0.085, d2 * lock.f(0.3, 0.42));
@@ -3000,7 +3676,7 @@
       if (lock.chance(0.45)) nostril(A(d2 + r * 0.3, back * r * 0.45), lock.f(0.013, 0.022));
       bottom = d2 + r * 0.7;
       outer = run;
-    } else if (style === "nostrils") {
+    } else if (drawStyle === "nostrils") {
       // barely a nose: a hint of bridge and two unmatched marks
       if (lock.chance(0.7)) inkPoly(c, rng, [A(drop * 0.35, 0), A(drop * 0.9, near * s * 0.02)], { w: w * 0.5, dry: 0.9 });
       nostril(A(drop, near * s * lock.f(0.05, 0.1)), lock.f(0.022, 0.036));
@@ -3008,7 +3684,7 @@
       // always a mark under them: two dots alone read as a pair of holes
       inkPoly(c, rng, [A(drop + s * 0.015, near * s * 0.04), A(drop + s * lock.f(0.0, 0.03), back * baseRun * lock.f(0.4, 0.7))], { w: w * 0.6, dry: 0.75 });
       outer = null;
-    } else if (style === "silhouette") {
+    } else if (drawStyle === "silhouette") {
       // Too frontal for the contour to carry it, so he draws the knuckle
       // head-on: a short bridge and a broad blunt base.
       const d2 = drop * lock.f(0.62, 0.8);
@@ -3287,68 +3963,276 @@
     }
   }
 
-  // Heads come in kinds; bodies were one trapezoid with the dials nudged, so
-  // six different men wore the identical mannequin. Same treatment: shoulder
-  // and hip width, torso and leg length, and the waist profile all move
-  // together, because a barrel-chested man is not a lanky one with wider
-  // shoulders.
-  function bodyKind(rng, person) {
-    const kinds = [
-      // stocky: wide, short, thick through the middle
-      () => ({ shW: rng.f(1.14, 1.42), hipW: rng.f(0.92, 1.18), torso: rng.f(1.6, 1.9),
-               legs: rng.f(1.3, 1.62), waist: rng.f(1.06, 1.26), armW: rng.f(0.2, 0.25) }),
-      // lanky: narrow, long, straight
-      () => ({ shW: rng.f(0.7, 0.9), hipW: rng.f(0.48, 0.66), torso: rng.f(2.2, 2.6),
-               legs: rng.f(2.1, 2.55), waist: rng.f(0.74, 0.92), armW: rng.f(0.15, 0.19) }),
-      // pot: narrow up top, heavy low down
-      () => ({ shW: rng.f(0.8, 1.0), hipW: rng.f(1.0, 1.3), torso: rng.f(1.85, 2.15),
-               legs: rng.f(1.5, 1.85), waist: rng.f(1.2, 1.5), armW: rng.f(0.17, 0.22) }),
-      // taper: broad shoulders down to nothing
-      () => ({ shW: rng.f(1.2, 1.5), hipW: rng.f(0.52, 0.72), torso: rng.f(1.95, 2.3),
-               legs: rng.f(1.85, 2.2), waist: rng.f(0.66, 0.86), armW: rng.f(0.18, 0.23) }),
-      // slight: small all over, short limbs
-      () => ({ shW: rng.f(0.72, 0.92), hipW: rng.f(0.56, 0.76), torso: rng.f(1.55, 1.85),
-               legs: rng.f(1.35, 1.7), waist: rng.f(0.86, 1.1), armW: rng.f(0.15, 0.19) }),
-      // ordinary, so the sheet has a baseline
-      () => ({ shW: rng.f(0.92, 1.14), hipW: rng.f(0.66, 0.88), torso: rng.f(1.9, 2.25),
-               legs: rng.f(1.7, 2.05), waist: rng.f(0.84, 1.16), armW: rng.f(0.16, 0.21) }),
-    ];
-    // The build decided for the person has to pick the body, or a heavy
-    // character gets a lanky torso and the character layer means nothing
-    // below the neck.
-    const byBuild = { heavy: [0, 0, 2, 2, 5], slight: [1, 1, 4, 4, 5], ordinary: [5, 5, 3, 1, 0, 2] };
-    const pool = (person && byBuild[person.build]) || [0, 1, 2, 3, 4, 5, 5];
-    let i = rng.pick(pool);
-    // an old frame narrows and stoops whatever it started as
-    if (person && person.age === "old" && rng.chance(0.4)) i = rng.pick([1, 4, 2]);
-    return kinds[i]();
+  // Fat, leg length and muscle are the person's, the way the haircut is.
+  // They are picked once when he is made. Drawing them off the body stream
+  // meant a still spin that reused a spent generator rolled a new man every
+  // frame — fat, then thin, then long-legged — which is the opposite of a
+  // body.
+  function makeBodyPlan(rng, person) {
+    const fatKind = person && person.build === "heavy"
+      ? rng.pick(["ordinary", "fat", "fat", "fat"])
+      : person && person.build === "slight"
+        ? rng.pick(["thin", "thin", "thin", "ordinary"])
+        : rng.pick(["thin", "ordinary", "ordinary", "ordinary", "fat"]);
+    const legsKind = rng.pick(["short", "short", "ordinary", "ordinary", "long", "long"]);
+    const muscleKind = person && person.build === "heavy"
+      ? rng.pick(["ordinary", "big", "big"])
+      : person && person.build === "slight"
+        ? rng.pick(["skinny", "skinny", "ordinary"])
+        : rng.pick(["skinny", "ordinary", "ordinary", "big"]);
+
+    const fat = fatKind === "thin" ? rng.f(0.02, 0.22)
+      : fatKind === "fat" ? rng.f(0.78, 1)
+      : rng.f(0.38, 0.6);
+    const muscle = muscleKind === "skinny" ? rng.f(0.02, 0.22)
+      : muscleKind === "big" ? rng.f(0.78, 1)
+      : rng.f(0.38, 0.6);
+    const legAmt = legsKind === "short" ? rng.f(0.02, 0.22)
+      : legsKind === "long" ? rng.f(0.78, 1)
+      : rng.f(0.38, 0.6);
+
+    const shW = 0.7 + muscle * 0.62 + fat * 0.16;
+    const hipW = 0.5 + fat * 0.78 + muscle * 0.06;
+    const waist = 0.58 + fat * 0.92 - muscle * 0.1;
+    const torso = (person && person.age === "old" ? 1.62 : 1.72) + fat * 0.28;
+    const legs = 1.22 + legAmt * 1.32;
+    const armW = 0.125 + muscle * 0.175 + fat * 0.03;
+    const chestZ = 0.2 + fat * 0.32 + muscle * 0.18;
+    const belly = fat * 0.38;
+    const shY = rng.f(0.34, 0.5);
+    const hipY = torso;
+    const kneeT = rng.f(0.48, 0.55);
+    const midW = (shW + hipW) * 0.5 * waist;
+    const neckW = rng.f(0.15, 0.21);
+    const old = person && person.age === "old";
+
+    return {
+      fatKind,
+      legsKind,
+      muscleKind,
+      fat,
+      muscle,
+      shW,
+      hipW,
+      waist,
+      midW,
+      torso,
+      legs,
+      armW,
+      chestZ,
+      belly,
+      shY,
+      hipY,
+      kneeY: hipY + legs * kneeT,
+      footY: hipY + legs,
+      neckW,
+      shrug: rng.f(-0.1, 0.14),
+      slope: rng.f(-0.12, 0.22),
+      asymL: rng.f(0.9, 1.1),
+      asymR: rng.f(0.9, 1.1),
+      tilt: rng.f(-0.08, 0.08) + (old ? rng.f(0.02, 0.08) : 0),
+      stance: rng.f(-0.18, 0.22),
+      spread: rng.f(0.82, 1.28),
+      waistT: rng.f(0.44, 0.64),
+      waistJL: rng.f(0.96, 1.04),
+      waistJR: rng.f(0.96, 1.04),
+      shoeKind: rng.pick(["wedge", "round", "boot", "square", "round"]),
+      toe: rng.f(0.22, 0.36),
+      heel: rng.f(0.07, 0.11),
+      shoeH: rng.f(0.08, 0.13),
+      swingL: rng.f(-0.14, 0.2),
+      swingR: rng.f(-0.14, 0.2),
+      elbowOutL: rng.f(0.02, 0.12),
+      elbowOutR: rng.f(0.02, 0.12),
+      elbowYL: rng.f(0.68, 0.92),
+      elbowYR: rng.f(0.68, 0.92),
+      handOutL: rng.f(-0.02, 0.18),
+      handOutR: rng.f(-0.02, 0.18),
+      handYL: rng.f(1.44, 1.82),
+      handYR: rng.f(1.44, 1.82),
+      hipKL: rng.f(0.5, 0.6),
+      hipKR: rng.f(0.5, 0.6),
+      kneeJL: rng.f(-0.06, 0.06),
+      kneeJR: rng.f(-0.06, 0.06),
+      kneeYL: rng.f(-0.08, 0.08),
+      kneeYR: rng.f(-0.08, 0.08),
+      footJL: rng.f(-0.1, 0.1),
+      footJR: rng.f(-0.1, 0.1),
+      footDropL: rng.f(-0.07, 0.07),
+      footDropR: rng.f(-0.07, 0.07),
+    };
   }
 
-  function drawBody(c, rng, cx, neckY, s, lean, clothes, person) {
-    const lx = (lean + MOTION.lean) * s * 0.26;
-    const B = bodyKind(rng, person);
-    const shW = s * B.shW;
-    const hipW = s * B.hipW;
-    const shY = neckY + s * rng.f(0.32, 0.54);
-    const hipY = neckY + s * B.torso;
-    const kneeY = hipY + s * B.legs * rng.f(0.46, 0.56);
-    const footY = hipY + s * B.legs;
+  // Rings of a tapered capsule in local 3D — the same idea as the skull's
+  // unit sphere, for a limb that has thickness from every angle.
+  function capsuleRings(a, b, ra, rb, nu = 10, nv = 5) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const uz = dz / len;
+    let px = 0;
+    let py = 1;
+    let pz = 0;
+    if (Math.abs(uy) > 0.92) {
+      px = 1;
+      py = 0;
+    }
+    let qx = uy * pz - uz * py;
+    let qy = uz * px - ux * pz;
+    let qz = ux * py - uy * px;
+    const ql = Math.hypot(qx, qy, qz) || 1;
+    qx /= ql;
+    qy /= ql;
+    qz /= ql;
+    px = qy * uz - qz * uy;
+    py = qz * ux - qx * uz;
+    pz = qx * uy - qy * ux;
+    const rings = [];
+    for (let i = 0; i <= nv; i++) {
+      const t = i / nv;
+      const r = ra + (rb - ra) * t;
+      const cx = a.x + dx * t;
+      const cy = a.y + dy * t;
+      const cz = a.z + dz * t;
+      const ring = [];
+      for (let j = 0; j < nu; j++) {
+        const ang = (j / nu) * TAU;
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        ring.push({
+          x: cx + (px * ca + qx * sa) * r,
+          y: cy + (py * ca + qy * sa) * r,
+          z: cz + (pz * ca + qz * sa) * r,
+        });
+      }
+      rings.push(ring);
+    }
+    return rings;
+  }
+
+  function chainRings(joints, r0, r1, nu = 10, nv = 4) {
+    const rings = [];
+    const bones = Math.max(1, joints.length - 1);
+    for (let i = 0; i < bones; i++) {
+      const t0 = i / bones;
+      const t1 = (i + 1) / bones;
+      const part = capsuleRings(
+        joints[i],
+        joints[i + 1],
+        r0 + (r1 - r0) * t0,
+        r0 + (r1 - r0) * t1,
+        nu,
+        nv
+      );
+      for (let k = i === 0 ? 0 : 1; k < part.length; k++) rings.push(part[k]);
+    }
+    return rings;
+  }
+
+  // One left and one right from each anatomical ring, then stitch. A 2D
+  // y-bin or radial hull hops when a turn empties a bin, which read as a
+  // different body every frame of a still spin. mode "bone" takes extrema
+  // across the projected bone, so a hanging arm is a sausage and not a box.
+  function stitchRings(rings, project, mode) {
+    if (!rings || rings.length < 2) return [];
+    const proj = rings.map((ring) => ring.map(project));
+    let nx = 1;
+    let ny = 0;
+    if (mode === "bone") {
+      const a = proj[0];
+      const b = proj[proj.length - 1];
+      const ax = a.reduce((s, p) => s + p.x, 0) / a.length;
+      const ay = a.reduce((s, p) => s + p.y, 0) / a.length;
+      const bx = b.reduce((s, p) => s + p.x, 0) / b.length;
+      const by = b.reduce((s, p) => s + p.y, 0) / b.length;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      nx = -dy / len;
+      ny = dx / len;
+    }
+    const left = [];
+    const right = [];
+    for (const ring of proj) {
+      let lo = null;
+      let hi = null;
+      let loD = Infinity;
+      let hiD = -Infinity;
+      for (const q of ring) {
+        const d = q.x * nx + q.y * ny;
+        if (d < loD) {
+          loD = d;
+          lo = q;
+        }
+        if (d > hiD) {
+          hiD = d;
+          hi = q;
+        }
+      }
+      if (lo && hi) {
+        left.push(lo);
+        right.push(hi);
+      }
+    }
+    if (left.length < 2) return [];
+    return left.concat(right.reverse());
+  }
+
+  function softenPoly(pts) {
+    if (!pts || pts.length < 4) return pts || [];
+    const out = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % n];
+      out.push({
+        x: a.x * 0.75 + b.x * 0.25,
+        y: a.y * 0.75 + b.y * 0.25,
+        z: ((a.z || 0) * 0.75 + (b.z || 0) * 0.25),
+      });
+      out.push({
+        x: a.x * 0.25 + b.x * 0.75,
+        y: a.y * 0.25 + b.y * 0.75,
+        z: ((a.z || 0) * 0.25 + (b.z || 0) * 0.75),
+      });
+    }
+    return out;
+  }
+
+  function drawBody(c, rng, cx, neckY, s, lean, clothes, person, space) {
+    // Same idea as the skull. Joints live in 3D — x right, y down from the
+    // neck, z forward — then they take the same yaw/pitch/roll and project.
+    // Clothes and the silhouette still grow around the 2D result, so a spin
+    // shows a side and a back instead of a flat cutout that refuses to turn.
+    const yaw = (space && space.yaw) || 0;
+    const pitch = (space && space.pitch) || 0;
+    const roll = (space && space.roll) || 0;
+    const depth = (space && space.depth) || 1.2;
+    const B = (space && space.body) || makeBodyPlan(lockRng(rng, "build"), person);
+    const shW = B.shW;
+    const hipW = B.hipW;
+    const shY = B.shY;
+    const hipY = B.hipY;
+    const kneeY = B.kneeY;
+    const footY = B.footY;
     const aw0 = B.armW;
     const armR = (t) => s * (aw0 - (aw0 - 0.082) * Math.pow(t, 0.75)) * (0.94 + 0.12 * fbm2(t * 3.4, aw0 * 90, 991));
-    const lw0 = Math.max(0.15, B.armW * rng.f(1.08, 1.3));
-    const legR = (t) => s * (lw0 - lw0 * 0.34 * t);
+    const lw0 = Math.max(0.14, B.armW * (1.05 + B.muscle * 0.28 + B.fat * 0.12));
     const pose = clothes.pose;
-    const shrug = rng.f(-0.12, 0.16);
-    const slope = rng.f(-0.14, 0.26); // square shoulders through to sloping
-    // no two sides of a drawn person agree
-    const asymL = rng.f(0.86, 1.14);
-    const asymR = rng.f(0.86, 1.14);
+    const shrug = B.shrug;
+    const slope = B.slope;
+    const asymL = B.asymL;
+    const asymR = B.asymR;
     const asym = (side) => (side < 0 ? asymL : asymR);
 
     // the torso leans a few degrees off the head's axis
-    const tilt = rng.f(-0.1, 0.1);
+    const tilt = B.tilt;
     const ct = Math.cos(tilt);
     const st = Math.sin(tilt);
+    const leanAmt = lean + MOTION.lean;
     // A body in motion does not travel as one block. The torso rises and
     // sways while the feet stay where they were put — so the displacement is
     // full strength from the hips up and fades to nothing at the floor, which
@@ -3356,90 +4240,117 @@
     // A jump is the exception: there the ground lets go, and MOTION.ground
     // carries the feet up with everything else.
     const groundK = 1 - (MOTION.ground ?? 1);
-    const planted = (y) => {
+    const planted = (ly) => {
       if (!MOTION.on) return 0;
-      const k = Math.max(0, Math.min(1, (y - hipY) / Math.max(1e-6, footY - hipY)));
+      const k = Math.max(0, Math.min(1, (ly - hipY) / Math.max(1e-6, footY - hipY)));
       return 1 - k * (1 - groundK);
     };
-    const P = (x, y) => {
-      const dy = y - neckY;
-      const dx = x + (lx * dy) / (s * 2);
-      const g = planted(y);
+    // Local point, then the same rotate/project the skull uses.
+    const loc = (x, y, z) => {
+      const dx = x + leanAmt * y * 0.13;
+      return { x: dx * ct - y * st, y: dx * st + y * ct, z: z };
+    };
+    const project = (p) => {
+      let q = rotY(p, yaw);
+      q = rotX(q, pitch);
+      q = rotZ(q, roll);
+      const k = 1 + q.z * 0.22 * depth;
+      const g = planted(p.y);
       return {
-        x: cx + dx * ct - dy * st + MOTION.sway * s * g,
-        y: neckY + dx * st + dy * ct + MOTION.bob * s * g,
+        x: cx + q.x * s * k + MOTION.sway * s * g,
+        y: neckY + q.y * s * k + MOTION.bob * s * g,
+        z: q.z,
       };
     };
 
     // Move a joint the rig already worked out. Offsets are added, never
     // substituted, so the swing his arms happen to hang at is still his.
-    const J = (p, dx, dy) => (MOTION.on ? { x: p.x + dx * s, y: p.y + dy * s } : p);
+    const J = (p, dx, dy) => (MOTION.on ? { x: p.x + dx, y: p.y + dy, z: p.z } : p);
 
     // ---- skeleton lines the outline is grown around ----
     const arm = (side) => {
       const m = MOTION.arm[side < 0 ? 0 : 1];
-      const sh = P(side * shW * 0.82, shY + s * (shrug * side + MOTION.sh));
+      const sh = loc(side * shW * 0.82, shY + shrug * side + MOTION.sh, 0.1);
       const E = (p) => J(p, m.ex, m.ey);
       const H = (p) => J(p, m.hx, m.hy);
       if (pose === "pockets") {
-        return [sh, E(P(side * (shW + s * 0.16), shY + s * 0.78)), H(P(side * (hipW + s * 0.1), hipY - s * 0.16))];
+        return [sh, E(loc(side * (shW + 0.16), shY + 0.78, 0.18)), H(loc(side * (hipW + 0.1), hipY - 0.16, 0.2))];
       }
       if (pose === "hips") {
-        return [sh, E(P(side * (shW + s * 0.42), shY + s * 0.74)), H(P(side * (hipW + s * 0.06), hipY - s * 0.08))];
+        return [sh, E(loc(side * (shW + 0.42), shY + 0.74, 0.15)), H(loc(side * (hipW + 0.06), hipY - 0.08, 0.22))];
       }
       if (pose === "folded") {
-        return [sh, E(P(side * (shW + s * 0.14), shY + s * 0.62)), H(P(-side * s * 0.16, shY + s * 0.95))];
+        return [sh, E(loc(side * (shW + 0.14), shY + 0.62, 0.28)), H(loc(-side * 0.16, shY + 0.95, 0.35))];
       }
       // hanging
       // the hang is not vertical on everyone: some swing out, some tuck in
       const a = asym(side);
-      const swing = rng.f(-0.16, 0.24);
+      const left = side < 0;
+      const swing = left ? B.swingL : B.swingR;
+      const elbowOut = left ? B.elbowOutL : B.elbowOutR;
+      const elbowY = left ? B.elbowYL : B.elbowYR;
+      const handOut = left ? B.handOutL : B.handOutR;
+      const handY = left ? B.handYL : B.handYR;
       return [
         sh,
-        E(P(side * (shW + s * (rng.f(0.02, 0.13) + swing * 0.4)) * a, shY + s * rng.f(0.66, 0.96) * a)),
-        H(P(side * (shW + s * (rng.f(-0.02, 0.2) + swing)) * a, shY + s * rng.f(1.42, 1.86) * a)),
+        E(loc(side * (shW + elbowOut + swing * 0.4) * a, shY + elbowY * a, 0.06)),
+        H(loc(side * (shW + handOut + swing) * a, shY + handY * a, 0.04)),
       ];
     };
 
     // stance: bowed, knock-kneed, wide, or planted
-    const stance = rng.f(-0.22, 0.26);
-    const spread = rng.f(0.78, 1.35);
+    const stance = B.stance;
+    const spread = B.spread;
     const leg = (side) => {
-      const drop = footY + s * rng.f(-0.09, 0.09);
+      const left = side < 0;
+      const drop = footY + (left ? B.footDropL : B.footDropR);
       const m = MOTION.leg[side < 0 ? 0 : 1];
+      const hipK = left ? B.hipKL : B.hipKR;
+      const kneeJ = left ? B.kneeJL : B.kneeJR;
+      const kneeOffY = left ? B.kneeYL : B.kneeYR;
+      const footJ = left ? B.footJL : B.footJR;
       return [
-        P(side * hipW * rng.f(0.48, 0.62) * asym(side), hipY - s * 0.05),
-        J(P(side * (hipW * 0.5 * spread + s * (stance + rng.f(-0.08, 0.08))), kneeY + s * rng.f(-0.1, 0.1)), m.kx, m.ky),
-        J(P(side * (hipW * 0.46 * spread + s * (-stance * 1.6 + rng.f(-0.12, 0.12))), drop), m.fx, m.fy),
+        loc(side * hipW * hipK * asym(side), hipY - 0.05, 0.06),
+        J(loc(side * (hipW * 0.5 * spread + (stance + kneeJ)), kneeY + kneeOffY, 0.08), m.kx, m.ky),
+        J(loc(side * (hipW * 0.46 * spread + (-stance * 1.6 + footJ)), drop, 0.02), m.fx, m.fy),
       ];
     };
 
-    const La = arm(-1);
-    const Ra = arm(1);
-    const Ll = leg(-1);
-    const Rl = leg(1);
+    const LaL = arm(-1);
+    const RaL = arm(1);
+    const LlL = leg(-1);
+    const RlL = leg(1);
     // A jump (or a knock-kneed stance plus motion) can send the knees
     // through each other. The core outline is one polygon, so crossing
     // legs fold it into a bowtie and the clothing clip dies.
     {
-      const minGap = s * Math.max(0.22, lw0 * 1.2);
+      const minGap = Math.max(0.22, lw0 * 1.2);
       for (let i = 0; i < 3; i++) {
-        const gap = Rl[i].x - Ll[i].x;
+        const gap = RlL[i].x - LlL[i].x;
         if (gap < minGap) {
-          const mid = (Ll[i].x + Rl[i].x) / 2;
-          Ll[i] = { x: mid - minGap / 2, y: Ll[i].y };
-          Rl[i] = { x: mid + minGap / 2, y: Rl[i].y };
+          const mid = (LlL[i].x + RlL[i].x) / 2;
+          LlL[i] = { x: mid - minGap / 2, y: LlL[i].y, z: LlL[i].z };
+          RlL[i] = { x: mid + minGap / 2, y: RlL[i].y, z: RlL[i].z };
         }
       }
     }
+    const La = LaL.map(project);
+    const Ra = RaL.map(project);
+    const Ll = LlL.map(project);
+    const Rl = RlL.map(project);
 
     const smooth = (pts, n) => {
       const out = [pts[0]];
       for (let i = 1; i < pts.length; i++) {
         const a = pts[i - 1];
         const b = pts[i];
-        const mid = { x: (a.x + b.x) / 2 + rng.f(-2, 2), y: (a.y + b.y) / 2 };
-        out.push(...bezier(a, b, mid, n).slice(1));
+        const mid = { x: (a.x + b.x) / 2 + rng.f(-2, 2), y: (a.y + b.y) / 2, z: ((a.z || 0) + (b.z || 0)) / 2 };
+        const run = bezier(a, b, mid, n).slice(1);
+        run.forEach((q, k) => {
+          const t = (k + 1) / n;
+          q.z = (a.z || 0) * (1 - t) + (b.z || 0) * t;
+        });
+        out.push(...run);
       }
       return out;
     };
@@ -3449,21 +4360,18 @@
     const RlS = smooth(Rl, 9);
 
     // ---- one continuous silhouette ----
-    const neckL = P(-s * rng.f(0.15, 0.21), neckY - s * 0.42);
-    const neckR = P(s * rng.f(0.15, 0.21), neckY - s * 0.42);
-    const shoulderL = P(-shW * asymL, shY + s * (slope - shrug + MOTION.sh));
-    const shoulderR = P(shW * asymR, shY + s * (slope + shrug + MOTION.sh) + s * rng.f(-0.06, 0.06));
+    const neckL = project(loc(-B.neckW, -0.42, 0.14));
+    const neckR = project(loc(B.neckW, -0.42, 0.14));
+    const shoulderL = project(loc(-shW * asymL, shY + slope - shrug + MOTION.sh, 0.1));
+    const shoulderR = project(loc(shW * asymR, shY + slope + shrug + MOTION.sh, 0.1));
     // a belly, or a pinch, or neither — and it is not at the same height twice
-    const waistY = shY + (hipY - shY) * rng.f(0.42, 0.68);
-    const midW = (shW + hipW) * 0.5 * B.waist;
-    const waistL = P(-midW * rng.f(0.94, 1.06), waistY);
-    const waistR = P(midW * rng.f(0.94, 1.06), waistY + s * rng.f(-0.06, 0.06));
-    const hipL = P(-hipW, hipY);
-    const hipR = P(hipW, hipY);
-    const crotch = {
-      x: (Ll[0].x + Rl[0].x) * 0.5,
-      y: Math.max(Ll[0].y, Rl[0].y) + s * 0.14,
-    };
+    const waistY = shY + (hipY - shY) * B.waistT;
+    const midW = B.midW;
+    const waistL = project(loc(-midW * B.waistJL, waistY, 0.18 + B.belly));
+    const waistR = project(loc(midW * B.waistJR, waistY, 0.18 + B.belly));
+    const hipL = project(loc(-hipW, hipY, 0.06));
+    const hipR = project(loc(hipW, hipY, 0.06));
+    const crotch = project(loc(0, Math.max(LlL[0].y, RlL[0].y) + 0.14, 0.06));
 
     const round = (pts, r) => {
       const out = [];
@@ -3484,48 +4392,18 @@
       return out;
     };
 
-    const shoeKind = rng.pick(["wedge", "round", "boot", "square", "round"]);
-    const footPts = (ankle, side) => {
-      const toe = side * s * rng.f(0.24, 0.44);
-      const h = s * rng.f(0.09, 0.15);
-      if (shoeKind === "round") {
-        const pts = [];
-        for (let i = 0; i <= 9; i++) {
-          const a = -Math.PI * 0.5 + (i / 9) * Math.PI;
-          pts.push({
-            x: ankle.x + Math.sin(a) * toe * (a > 0 ? 1 : 0.5),
-            y: ankle.y - s * 0.02 + (1 - Math.cos(a)) * h * 0.6,
-          });
-        }
-        pts.push({ x: ankle.x - side * s * 0.15, y: ankle.y + h });
-        return pts;
-      }
-      if (shoeKind === "boot") {
-        return [
-          { x: ankle.x - side * s * 0.16, y: ankle.y - s * rng.f(0.12, 0.26) },
-          { x: ankle.x + side * s * 0.15, y: ankle.y - s * rng.f(0.1, 0.22) },
-          { x: ankle.x + toe * 0.8, y: ankle.y + s * 0.02 },
-          { x: ankle.x + toe * 0.72, y: ankle.y + h },
-          { x: ankle.x - side * s * 0.18, y: ankle.y + h },
-        ];
-      }
-      if (shoeKind === "square") {
-        return [
-          { x: ankle.x - side * s * 0.13, y: ankle.y - s * 0.02 },
-          { x: ankle.x + toe * 0.85, y: ankle.y - s * 0.03 },
-          { x: ankle.x + toe * 0.85, y: ankle.y + h },
-          { x: ankle.x - side * s * 0.15, y: ankle.y + h },
-        ];
-      }
+    const shoe3 = (ankle, side) => {
+      const boot = B.shoeKind === "boot";
+      const up = boot ? 0.18 : 0.03;
       return [
-        { x: ankle.x + side * s * 0.13, y: ankle.y - s * 0.02 },
-        { x: ankle.x + toe, y: ankle.y + s * 0.04 },
-        { x: ankle.x + toe * 0.92, y: ankle.y + h },
-        { x: ankle.x - side * s * 0.14, y: ankle.y + h * 0.9 },
+        project({ x: ankle.x - side * B.heel, y: ankle.y - up, z: ankle.z - 0.06 }),
+        project({ x: ankle.x + side * 0.04, y: ankle.y - 0.02, z: ankle.z + B.toe }),
+        project({ x: ankle.x + side * 0.03, y: ankle.y + B.shoeH, z: ankle.z + B.toe * 0.9 }),
+        project({ x: ankle.x - side * B.heel * 1.15, y: ankle.y + B.shoeH, z: ankle.z - 0.08 }),
       ];
     };
-    const Lfoot = footPts(LlS[LlS.length - 1], -1);
-    const Rfoot = footPts(RlS[RlS.length - 1], 1);
+    const Lfoot = shoe3(LlL[2], -1);
+    const Rfoot = shoe3(RlL[2], 1);
 
     // Core figure: neck, shoulders, sides, legs, feet. Arms go on top as
     // their own shapes, the way an arm crossing a body is actually drawn.
@@ -3538,44 +4416,74 @@
         const t = i / n;
         out.push({
           x: a.x + (b.x - a.x) * t + rng.f(-1, 1) * s * 0.035,
-          y: a.y + (b.y - a.y) * t + rng.f(-1, 1) * s * 0.03,
+          y: a.y + (b.y - b.y) * t + rng.f(-1, 1) * s * 0.03,
         });
       }
       return out;
     };
-    const core = []
-      .concat([neckL])
-      .concat(span(neckL, shoulderL, 3))
-      .concat([shoulderL])
-      .concat(span(shoulderL, waistL, 4))
-      .concat([waistL])
-      .concat(span(waistL, hipL, 3))
-      .concat([hipL])
-      .concat(edgeOf(LlS, legR, -1, 31).slice(1))
-      .concat(Lfoot)
-      .concat(edgeOf(LlS, legR, 1, 43).reverse().slice(1, -1))
-      .concat([crotch])
-      .concat(edgeOf(RlS, legR, -1, 57).slice(1))
-      .concat(Rfoot.slice().reverse())
-      .concat(edgeOf(RlS, legR, 1, 71).reverse().slice(1, -1))
-      .concat([hipR])
-      .concat(span(hipR, waistR, 3))
-      .concat([waistR])
-      .concat(span(waistR, shoulderR, 4))
-      .concat([shoulderR])
-      .concat(span(shoulderR, neckR, 3))
-      .concat([neckR]);
+    // Spend the same wander the old stick-core used, so the clothes stream
+    // does not shift. The drawn body is the volume, not this.
+    span(neckL, shoulderL, 3);
+    span(shoulderL, waistL, 4);
+    span(waistL, hipL, 3);
+    span(hipR, waistR, 3);
+    span(waistR, shoulderR, 4);
+    span(shoulderR, neckR, 3);
 
-    const armShape = (S, sd) => {
-      const a = edgeOf(S, armR, -1, sd);
-      const b = edgeOf(S, armR, 1, sd + 13);
-      // round both ends: an arm that closes on a hard reversal at the
-      // shoulder gets a blot there every time
-      const shoulderCap = round(S.slice().reverse(), armR(0)).reverse();
-      return a.concat(round(S, armR(1))).concat(b.reverse()).concat(shoulderCap);
+    const torsoRings = [];
+    {
+      const n = 14;
+      const around = 14;
+      const keys = [
+        { t: 0, rx: B.neckW * 0.9, rz: B.chestZ * 0.32, z: 0.1 },
+        { t: 0.16, rx: shW * 0.84, rz: B.chestZ, z: 0.1 },
+        { t: 0.38, rx: shW * 0.72 + midW * 0.18, rz: B.chestZ * 0.88, z: 0.12 + B.belly * 0.25 },
+        { t: 0.58, rx: midW, rz: B.chestZ * 0.52 + B.belly * 0.42, z: 0.1 + B.belly * 0.95 },
+        { t: 0.8, rx: hipW * 0.86 + midW * 0.1, rz: B.chestZ * 0.5, z: 0.04 - B.fat * 0.05 },
+        { t: 1, rx: hipW * 0.9, rz: B.chestZ * 0.48, z: 0.03 },
+      ];
+      const mix = (t) => {
+        let i = 0;
+        while (i < keys.length - 2 && t > keys[i + 1].t) i += 1;
+        const a = keys[i];
+        const b = keys[i + 1];
+        const u = (t - a.t) / Math.max(1e-6, b.t - a.t);
+        const s = u * u * (3 - 2 * u);
+        return {
+          rx: a.rx + (b.rx - a.rx) * s,
+          rz: a.rz + (b.rz - a.rz) * s,
+          z: a.z + (b.z - a.z) * s,
+        };
+      };
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        const y = -0.42 + (hipY + 0.16) * t;
+        const k = mix(t);
+        const ring = [];
+        for (let j = 0; j < around; j++) {
+          const a = (j / around) * TAU;
+          ring.push(loc(Math.cos(a) * k.rx, y, Math.sin(a) * k.rz + k.z));
+        }
+        torsoRings.push(ring);
+      }
+    }
+    let core = softenPoly(stitchRings(torsoRings, project));
+    if (core.length < 6) {
+      core = [neckL, shoulderL, waistL, hipL, hipR, waistR, shoulderR, neckR];
+    }
+
+    const limbPoly = (spine, r0, r1) => {
+      const poly = softenPoly(stitchRings(chainRings(spine, r0, r1, 12, 5), project, "bone"));
+      return poly.length >= 6 ? poly : [];
     };
-    const Larm = armShape(LaS, 11);
-    const Rarm = armShape(RaS, 83);
+    const armRad0 = aw0 * 0.95;
+    const armRad1 = Math.max(0.085, aw0 * 0.4);
+    let Larm = limbPoly(LaL, armRad0, armRad1);
+    let Rarm = limbPoly(RaL, armRad0, armRad1);
+    const Lleg = limbPoly(LlL, lw0 * 1.08, lw0 * 0.52);
+    const Rleg = limbPoly(RlL, lw0 * 1.08, lw0 * 0.52);
+    if (Larm.length < 6) Larm = edgeOf(LaS, armR, -1, 11).concat(edgeOf(LaS, armR, 1, 24).reverse());
+    if (Rarm.length < 6) Rarm = edgeOf(RaS, armR, -1, 83).concat(edgeOf(RaS, armR, 1, 96).reverse());
 
     if (clothes.wash) {
       inkFill(c, rng, core, clothes.wash, 0.22, 0.8);
@@ -3586,35 +4494,47 @@
     // under a heavy, dirty head is two different hands on one page.
     const bw = s * 0.034 * rng.f(0.92, 1.12);
     const wob = s * rng.f(0.035, 0.06);
-    inkPoly(c, rng, core, { closed: true, w: bw, doubled: true, dry: 0.6, wobble: wob });
-    // Arms are drawn LAST, over the finished garment. Drawn before it, every
-    // hem and stripe ran straight across them and the arms read transparent.
-    const drawArms = () => {
-      // Sleeve marks used to be drawn with the rest of the clothes, before
-      // this fill, so the fill erased them and the garment lost its cuffs.
-      inkFill(c, rng, Larm, PAPER, 1, 0.8);
-      inkFill(c, rng, Rarm, PAPER, 1, 0.8);
-      refibre(c, rng, Larm);
-      refibre(c, rng, Rarm);
-      inkPoly(c, rng, Larm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
-      inkPoly(c, rng, Rarm, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
-      if (wantCuffs) {
-        cuff(LaS, -1);
-        cuff(RaS, 1);
-      }
+    const leftZ = (La[1].z || 0) + (La[2].z || 0);
+    const rightZ = (Ra[1].z || 0) + (Ra[2].z || 0);
+    const farIsLeft = leftZ < rightZ;
+    let wantCuffs = false;
+    // Far arm first, then a paper fill over the chest so it cannot
+    // show through, then the near arm after the garment.
+    const drawOneArm = (armPts, S, side) => {
+      inkFill(c, rng, armPts, PAPER, 1, 0.8);
+      refibre(c, rng, armPts);
+      inkPoly(c, rng, armPts, { closed: true, w: bw * 0.92, dry: 0.7, wobble: wob * 0.8 });
+      if (wantCuffs) cuff(S, side);
       if (pose !== "folded" && pose !== "pockets") {
-        hand(c, rng, LaS, armR(1), -1, s);
-        hand(c, rng, RaS, armR(1), 1, s);
+        hand(c, rng, S, armR(1), side, s);
       } else if (pose === "pockets") {
-        for (let side = -1; side <= 1; side += 2) {
-          const t = side < 0 ? LaS[LaS.length - 1] : RaS[RaS.length - 1];
-          inkPoly(c, rng, [
-            { x: t.x - side * s * 0.22, y: t.y - s * rng.f(0.16, 0.26) },
-            { x: t.x - side * s * 0.06, y: t.y - s * 0.04 },
-            { x: t.x + side * s * rng.f(0.08, 0.16), y: t.y + s * rng.f(0.0, 0.06) },
-          ], { w: s * 0.017, dry: 0.7 });
-        }
+        const t = S[S.length - 1];
+        inkPoly(c, rng, [
+          { x: t.x - side * s * 0.22, y: t.y - s * rng.f(0.16, 0.26) },
+          { x: t.x - side * s * 0.06, y: t.y - s * 0.04 },
+          { x: t.x + side * s * rng.f(0.08, 0.16), y: t.y + s * rng.f(0.0, 0.06) },
+        ], { w: s * 0.017, dry: 0.7 });
       }
+    };
+    const leftLegZ = (Ll[0].z || 0) + (Ll[2].z || 0);
+    const rightLegZ = (Rl[0].z || 0) + (Rl[2].z || 0);
+    const farLeftLeg = leftLegZ < rightLegZ;
+    const drawLeg = (poly) => {
+      if (!poly || poly.length < 6) return;
+      inkFill(c, rng, poly, PAPER, 1, 0.7);
+      inkPoly(c, rng, poly, { closed: true, w: bw * 0.9, dry: 0.65, wobble: wob * 0.8 });
+    };
+    if (farLeftLeg) drawLeg(Lleg);
+    else drawLeg(Rleg);
+    if (farIsLeft) drawOneArm(Larm, LaS, -1);
+    else drawOneArm(Rarm, RaS, 1);
+    inkFill(c, rng, core, PAPER, 1, 0.7);
+    inkPoly(c, rng, core, { closed: true, w: bw, doubled: true, dry: 0.6, wobble: wob });
+    if (farLeftLeg) drawLeg(Rleg);
+    else drawLeg(Lleg);
+    const drawArms = () => {
+      if (farIsLeft) drawOneArm(Rarm, RaS, 1);
+      else drawOneArm(Larm, LaS, -1);
     };
     const outline = core;
 
@@ -3659,7 +4579,6 @@
       return pts;
     };
 
-    let wantCuffs = false;
     const cuffSkip = [fit.chance(0.22), fit.chance(0.22)];
     const cuffT = [sleeveT + fit.f(-0.12, 0.12), sleeveT + fit.f(-0.12, 0.12)];
     const cuffFrom = [fit.chance(0.5) ? 0 : 1, fit.chance(0.5) ? 0 : 1];
@@ -3787,17 +4706,19 @@
       const heavy = s * fit.f(0.022, 0.07);
       if (clothes.pattern === "stripe") {
         // skewed independently, gaps varying, a third running past the edge
+        const span = s * shW;
         for (let y = shScreenY + s * fit.f(0.04, 0.2); y < hemY; y += pitch * fit.f(0.6, 1.4)) {
-          const skew = fit.f(-0.14, 0.14) * shW;
+          const skew = fit.f(-0.14, 0.14) * span;
           const over = fit.chance(0.34) ? fit.f(0.1, 0.45) : 0;
           inkPoly(c, rng, [
-            { x: cx - shW * (1.2 + over), y: y - skew },
+            { x: cx - span * (1.2 + over), y: y - skew },
             { x: cx + fit.f(-6, 6), y: y + fit.f(-3, 4) },
-            { x: cx + shW * (1.2 + over), y: y + skew + fit.f(-4, 4) },
+            { x: cx + span * (1.2 + over), y: y + skew + fit.f(-4, 4) },
           ], { w: heavy * fit.f(0.7, 1.3), dry: 0.5, wobble: s * 0.035 });
         }
       } else if (clothes.pattern === "vstripe") {
-        for (let x = cx - shW * 1.3; x < cx + shW * 1.3; x += pitch * fit.f(0.75, 1.3)) {
+        const span = s * shW;
+        for (let x = cx - span * 1.3; x < cx + span * 1.3; x += pitch * fit.f(0.75, 1.3)) {
           inkPoly(c, rng, [
             { x, y: shScreenY + s * fit.f(-0.1, 0.15) },
             { x: x + fit.f(-4, 4), y: (shScreenY + hemY) / 2 },
@@ -3818,26 +4739,23 @@
     drawArms();
 
     if (clothes.darkLegs && clothes.pattern !== "dark") {
-      c.save();
-      c.beginPath();
-      core.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
-      c.closePath();
-      c.clip();
-      c.beginPath();
-      c.rect(cx - s * 4, hipScreenY - s * 0.05, s * 8, s * 4);
-      c.clip();
-      inkMassFill(c, rng, core, INK, { bite: s * 0.055 });
-      c.restore();
+      if (Lleg.length > 5) inkMassFill(c, rng, Lleg, INK, { bite: s * 0.055 });
+      if (Rleg.length > 5) inkMassFill(c, rng, Rleg, INK, { bite: s * 0.055 });
     }
     // shoes read as weight on the ground
     inkMassFill(c, rng, Lfoot, INK, { bite: s * 0.04 });
     inkMassFill(c, rng, Rfoot, INK, { bite: s * 0.04 });
 
     let maxX = -Infinity;
-    for (const q of core.concat(Larm, Rarm)) {
-      if (q.x > maxX) maxX = q.x;
+    for (const q of core.concat(Larm, Rarm, Lleg, Rleg)) {
+      if (q && q.x > maxX) maxX = q.x;
     }
-    return { hipY, footY, maxX, core };
+    return {
+      hipY: (hipL.y + hipR.y) / 2,
+      footY: Math.max(Ll[2].y, Rl[2].y),
+      maxX,
+      core,
+    };
   }
 
   // ---------- handwritten name ----------
@@ -4647,6 +5565,10 @@
     // he is wearing a different head every frame.
     d.hairShape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
     d.hairOuter = rng.pick(["skull", "skull", "quiff", "flattop", "dome", "wedge", "wedge", "sweep"]);
+    // How he moves is as much his as the haircut. Same seed, same nerves.
+    d.nerves = makeNerves(lockRng(rng, "nerves"), P);
+    // Fat, legs and muscle are the body's haircut — once, on load.
+    d.body = makeBodyPlan(lockRng(rng, "build"), P);
     return d;
   }
 
@@ -4667,7 +5589,7 @@
     const bodyS = s * 0.9;
     const hx = cx + MOTION.sway * bodyS;
     const hy = cy + MOTION.bob * bodyS;
-    const yaw = Math.max(-0.95, Math.min(0.95, dude.yaw + MOTION.yaw));
+    const yaw = dude.yaw + MOTION.yaw + VIEW_YAW;
     const pitch = Math.max(-0.6, Math.min(0.6, dude.pitch + MOTION.pitch));
     const roll = dude.roll + MOTION.roll;
 
@@ -4709,14 +5631,20 @@
       colourPass(c, R.colour, s, [{ pts: blob }]);
     }
 
-    const body = drawBody(c, R.body, cx, cy + s * 1.18, bodyS, dude.lean + yaw * 0.25, dude.clothes, dude.person);
+    const body = drawBody(c, R.body, cx, cy + s * 1.18, bodyS, dude.lean, dude.clothes, dude.person, {
+      yaw,
+      pitch,
+      roll,
+      depth: dude.depth,
+      body: dude.body,
+    });
     const hull = skull.silhouette();
     const prof = noseProfile(skull, dude);
     // His commonest nose is the contour itself, so bend the hull before it is
     // filled or stroked and then draw no bridge at all.
     const bump = dude.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
     headFill(c, rng, skull, hull, dude.skin);
-    const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
+    const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, dude.nose, dude.noseHeavy, dude);
     if (nose && bump) nose.bump = bump;
     // The hoop stops where the nose is. A chance of leaving it closed is
     // how the face outline used to show through the nose.
@@ -4791,8 +5719,8 @@
   // The keys, written on the paper like everything else — and pressable, so
   // the thing works on a phone, where there is no A to press. The first line
   // says what pressing it will do, not what state he is in.
-  const LEGEND_MOVE = ["a  make him move", "a  let him rest"];
-  const LEGEND_MOTION = "m  something else";
+  const LEGEND_MOVE = ["a  animate", "a  let him rest"];
+  const LEGEND_MOTION = "animate";
 
   function inkWidth(text, size) {
     return size * (text.length * 0.95 + 0.9);
@@ -4995,7 +5923,7 @@
     return ext;
   }
 
-  function drawDude(c, R, dude, w, h, seed) {
+  function drawDude(c, R, dude, w, h, seed, opt = {}) {
     paper(c, w, h, R.paper);
     const foot = footerLayout(w, h, false);
     // Placement draws from its own stream. It used to come off "mark", which
@@ -5026,11 +5954,16 @@
     cx = hiX < loX ? (loX + hiX) / 2 : Math.max(loX, Math.min(hiX, cx));
     let cy = top + ext.up * k + rng.f(0, Math.max(0, availH - (ext.up + ext.down + nameRoom) * k));
 
-    c.save();
-    c.translate(cx, cy);
-    c.scale(k, k);
-    const fig = figureInk(c, R, dude, 0, 0, CANON);
-    c.restore();
+    let fig;
+    if (opt.skipFigure) {
+      fig = { footY: ext.down, inkRight: ext.right };
+    } else {
+      c.save();
+      c.translate(cx, cy);
+      c.scale(k, k);
+      fig = figureInk(c, R, dude, 0, 0, CANON);
+      c.restore();
+    }
 
     const footY = cy + fig.footY * k;
     const inkRight = cx + fig.inkRight * k;
@@ -5076,7 +6009,7 @@
     setPen("nib");
     const hits = drawFooter(c, seed, w, foot);
     grainPass(c, c.__dpr);
-    return hits;
+    return { hits, cx, cy, k };
   }
 
   // ---------- colour ----------
@@ -5250,7 +6183,7 @@
         const prof = noseProfile(skull, d);
         const bump = d.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
         headFill(c, rng, skull, hull, d.skin);
-        const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, d.nose, d.noseHeavy);
+        const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, d.nose, d.noseHeavy, d);
         if (nose && bump) nose.bump = bump;
         let gaps = outlineGaps(skull, hull, [nose && nose.outer]);
         if (nose && nose.outer) {
@@ -5306,7 +6239,7 @@
     grainPass(c, c.__dpr);
   }
 
-  // ---------- moving pictures (?anim=1) ----------
+  // ---------- moving pictures ----------
   //
   // A flipbook, not a film. The sheet — paper, grain, the name, the words at
   // the foot of the page — is drawn once into a bitmap, because none of it
@@ -5320,7 +6253,17 @@
   // in space rather than skewing on the page.
   function makeAnimation(canvasEl, seed, dude, w, h, dpr, kind) {
     const foot = footerLayout(w, h, true);
-    const ext = motionExtent(seed, dude, kind);
+    const ext = (() => {
+      if (kind !== "live") return motionExtent(seed, dude, kind);
+      const jump = motionExtent(seed, dude, "jump");
+      const wave = motionExtent(seed, dude, "wave");
+      return {
+        up: Math.max(jump.up, wave.up),
+        down: Math.max(jump.down, wave.down),
+        left: Math.max(jump.left, wave.left),
+        right: Math.max(jump.right, wave.right),
+      };
+    })();
     const place = rngFor(seed, "place");
 
     const mx = Math.max(12, Math.min(w * 0.05, 40));
@@ -5369,15 +6312,17 @@
 
     const c = canvasEl.getContext("2d");
     let last = -1;
+    let lastYaw = null;
 
     return {
       hits,
       // t is the phase of the cycle, 0..1. frameNo only drives the boil, so
       // holding on a phase still redraws rather than freezing.
       draw(t, frameNo) {
-        if (frameNo === last) return;
+        if (frameNo === last && lastYaw === VIEW_YAW) return;
         last = frameNo;
-        MOTION = motionAt(kind, t);
+        lastYaw = VIEW_YAW;
+        MOTION = kind === "live" && WILL ? WILL.pose() : motionAt(kind, t);
         BOIL = frameNo * 0.41;
         const R = {
           mark: rngFor(seed, "mark"),
@@ -5416,7 +6361,46 @@
     };
   }
 
+  // ---------- public drawing (the scene page uses this; the single-dude
+  // page keeps running the app below) ----------
+  window.Dude = {
+    PAPER,
+    CANON,
+    MOTION_NAMES,
+    MOTION_PERIOD,
+    paper,
+    grainPass,
+    makeDude,
+    rngFor,
+    figureInk,
+    figureExtent,
+    motionExtent,
+    motionAt,
+    setPen,
+    inkLine,
+    inkPoly,
+    inkFill,
+    inkMassFill,
+    inkCirc,
+    inkArc,
+    stroke,
+    drawName,
+    parseSeed,
+    pose(kind, t) {
+      MOTION = motionAt(kind, t);
+    },
+    boil(n) {
+      BOIL = n || 0;
+    },
+    rest() {
+      MOTION = REST;
+      BOIL = 0;
+    },
+  };
+
   // ---------- app ----------
+  if (!canvas || !ctx) return;
+
   const Q = new URLSearchParams(location.search);
   const PLATE = !!Q.get("plate");
   if (PLATE) document.body.classList.add("plate");
@@ -5435,6 +6419,13 @@
     move: document.getElementById("move"),
     motion: document.getElementById("motion"),
   };
+  // The orbit lives on the v2 preview only. This page has no slider, so
+  // he keeps the yaw he already had — arrows and ?yaw= do not turn him.
+  const spinEl = document.getElementById("spin");
+  if (spinEl) {
+    const qYaw = parseFloat(Q.get("yaw"));
+    if (!isNaN(qYaw)) VIEW_YAW = (((qYaw % 360) + 360) % 360 / 360) * TAU;
+  }
 
   // The words are ink on the paper, so the button and the links are invisible
   // boxes laid over exactly where that ink landed — the page stays one
@@ -5461,6 +6452,9 @@
   let anim = null;
   let nextKind = null;
   let lastDude = null;
+  let lastR = null;
+  let lastPlace = null;
+  let stillSheet = null;
   let lastCssW = 0;
   let lastCssH = 0;
   let lastDpr = 1;
@@ -5489,8 +6483,37 @@
     const f = Math.floor(el * FPS);
     if (f === frameNo) return;
     frameNo = f;
+    if (anim.kind === "live" && WILL) WILL.step(1 / FPS);
     const period = MOTION_PERIOD[anim.kind] || 1.4;
     anim.book.draw((el / period) % 1, f);
+  }
+
+  function paintStillFigure() {
+    if (!stillSheet || !lastPlace || !lastDude || !lastR) return;
+    ctx.save();
+    ctx.setTransform(lastDpr, 0, 0, lastDpr, 0, 0);
+    ctx.drawImage(stillSheet, 0, 0, stillSheet.width, stillSheet.height, 0, 0, lastCssW, lastCssH);
+    ctx.translate(lastPlace.cx, lastPlace.cy);
+    ctx.scale(lastPlace.k, lastPlace.k);
+    figureInk(ctx, {
+      mark: rngFor(seed, "mark"),
+      body: rngFor(seed, "body"),
+      colour: rngFor(seed, "colour"),
+      hair: rngFor(seed, "hair"),
+    }, lastDude, 0, 0, CANON);
+    ctx.restore();
+    MOTION = REST;
+    BOIL = 0;
+  }
+
+  function applySpin() {
+    if (anim) {
+      const period = MOTION_PERIOD[anim.kind] || 1.4;
+      const el = startedAt ? (performance.now() - startedAt) / 1000 : 0;
+      anim.book.draw((el / period) % 1, frameNo);
+    } else {
+      paintStillFigure();
+    }
   }
 
   function render(nextSeed) {
@@ -5517,15 +6540,24 @@
     ctx.__dpr = dpr;
     stopAnim();
     lastDude = dude;
+    lastR = R;
     lastCssW = cssW;
     lastCssH = cssH;
     lastDpr = dpr;
+    stillSheet = null;
+    lastPlace = null;
+    if (spinEl) {
+      const deg = Math.round((((VIEW_YAW / TAU) % 1) + 1) % 1 * 360);
+      spinEl.value = String(deg);
+      spinEl.style.display = PLATE ? "none" : "block";
+    }
     if (PLATE) {
       drawPlate(ctx, cssW, cssH, seed);
       placeHits(null);
     } else if (animOn) {
       const kind = nextKind || forcedMotion || MOTION_NAMES[rngFor(seed, "motion").i(0, MOTION_NAMES.length - 1)];
       nextKind = null;
+      WILL = kind === "live" && dude.nerves ? makeWill(dude.nerves) : null;
       const book = makeAnimation(canvas, seed, dude, cssW, cssH, dpr, kind);
       anim = { book, kind };
       placeHits(book.hits);
@@ -5535,7 +6567,17 @@
       book.draw(forcedPhase ?? 0, 0);
       if (forcedPhase === null && !raf) raf = requestAnimationFrame(tick);
     } else {
-      placeHits(drawDude(ctx, R, dude, cssW, cssH, seed));
+      const bd = document.createElement("canvas");
+      bd.width = canvas.width;
+      bd.height = canvas.height;
+      const bc = bd.getContext("2d", { willReadFrequently: true });
+      bc.setTransform(dpr, 0, 0, dpr, 0, 0);
+      bc.__dpr = dpr;
+      const laid = drawDude(bc, R, dude, cssW, cssH, seed, { skipFigure: true });
+      stillSheet = bd;
+      lastPlace = { cx: laid.cx, cy: laid.cy, k: laid.k };
+      placeHits(laid.hits);
+      paintStillFigure();
     }
     count += 1;
     tallyEl.textContent = `dude nº ${count}`;
@@ -5555,7 +6597,7 @@
     animOn = !animOn;
     const url = new URL(location.href);
     if (animOn) url.searchParams.set("anim", "1");
-    else url.searchParams.delete("anim");
+    else url.searchParams.set("anim", "0");
     history.replaceState(null, "", url);
     count -= 1;
     render(seed);
@@ -5566,14 +6608,19 @@
   // label, it is a puzzle.
   function nextMotion() {
     if (PLATE) return;
-    if (!anim) {
-      nextKind = MOTION_NAMES[(MOTION_NAMES.indexOf(nextKind || MOTION_NAMES[0]) + 1) % MOTION_NAMES.length];
+    const cur = (anim && anim.kind) || nextKind || forcedMotion || MOTION_NAMES[0];
+    const i = MOTION_NAMES.indexOf(cur);
+    const kind = MOTION_NAMES[(i < 0 ? 0 : i + 1) % MOTION_NAMES.length];
+    if (!animOn || !anim) {
+      nextKind = kind;
       if (!animOn) return toggleMove();
     }
-    const i = MOTION_NAMES.indexOf(anim.kind);
-    const kind = MOTION_NAMES[(i + 1) % MOTION_NAMES.length];
+    WILL = null;
     const book = makeAnimation(canvas, seed, lastDude, lastCssW, lastCssH, lastDpr, kind);
     anim = { book, kind };
+    const url = new URL(location.href);
+    url.searchParams.set("m", kind);
+    history.replaceState(null, "", url);
     placeHits(book.hits);
     book.blit();
     startedAt = 0;
@@ -5585,6 +6632,12 @@
   btn.addEventListener("click", another);
   if (links.move) links.move.addEventListener("click", toggleMove);
   if (links.motion) links.motion.addEventListener("click", nextMotion);
+  if (spinEl) {
+    spinEl.addEventListener("input", () => {
+      VIEW_YAW = (Number(spinEl.value) / 360) * TAU;
+      applySpin();
+    });
+  }
   window.addEventListener("keydown", (e) => {
     if (e.target !== document.body) return;
     if (e.code === "Space") {
@@ -5602,6 +6655,15 @@
     if (e.key === "m" || e.key === "M") {
       e.preventDefault();
       nextMotion();
+      return;
+    }
+    if (spinEl && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      const step = e.key === "ArrowLeft" ? -8 : 8;
+      const deg = (((VIEW_YAW / TAU) * 360 + step) % 360 + 360) % 360;
+      VIEW_YAW = (deg / 360) * TAU;
+      spinEl.value = String(Math.round(deg));
+      applySpin();
     }
   });
   // A phone fires resize for the address bar sliding away. Redrawing the whole

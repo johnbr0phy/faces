@@ -38,11 +38,12 @@ then visit `http://localhost:8765`.
 Space, click, or tap for another. The seed is in the URL (`?s=4929`), so every
 dude is reproducible.
 
-`a  make him move` and `m  something else` are written under the label at the
-foot of the page, in the same hand as everything else, and pressing the words
-does what pressing the key does — a phone has no A to press. He starts moving.
-`?anim=0` holds him still. `?m=walk|wave|jump|look|dance|shrug` insists on one;
-without `?m` he does whatever his seed says he does.
+He starts moving. `animate` (or `m`) cycles the twenty-five things he can do;
+`a` lets him rest. The words are written on the paper, so a phone can press
+them. `?anim=0` loads him still. `?m=walk` (or wave, jump, look, dance, shrug,
+smile, cry, nod, point, clap, scratch, crouch, kick, stretch, bow, think, hail,
+stagger, hop, peek, sneak, yawn, cheer, fidget) insists on one; without `?m`
+his seed picks.
 
 He is not a picture being tweened. The head is already a skull with a yaw, a
 pitch and a roll, and the body is already a stick rig the silhouette is grown
@@ -59,7 +60,7 @@ the grain pass alone costs three times what the whole figure does.
 | --- | --- |
 | `?s=4929` | that dude, every time |
 | `?anim=0` | still |
-| `?m=walk` | walk, wave, jump, look, dance, or shrug |
+| `?m=walk` | walk, wave, jump, look, dance, shrug, or any of the others |
 | `?plate=1` | a sheet of 48 heads |
 
 `scripts/shot.sh` screenshots seeded dudes; `scripts/plate.sh` does the same for
@@ -67,3 +68,14 @@ a sheet; `scripts/anim.sh <seed> <motion>` grabs the frames of one cycle and
 `scripts/strip.py` lays them out as a strip to flip through.
 
 The drawings are after [mannay](https://x.com/mannay/status/2087522034351796728).
+
+## What's next
+
+Walking around him. The skull already turns; this is just more yaw — around
+once, back of the potato, face gone, hair still there. It is not on the page.
+There is a preview at [v2](https://johnbr0phy.github.io/faces/v2.html). The
+slider is a slider, which is why it is not the page. Arrow keys work there
+too. `?yaw=90` insists.
+
+An aisle of them — the weekly shop, several dudes standing in a place — is
+also on the bench. Same paper, same pen, not ready.
