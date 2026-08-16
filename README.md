@@ -78,3 +78,5 @@ These are not the page. The page is still [a dude](https://johnbr0phy.github.io/
 - [aisle](https://johnbr0phy.github.io/faces/aisle.html) — drop a few of them
   in the weekly shop. Space for another aisle, `d` to drop them again, `n` for
   how many. Same paper, same pen, not finished.
+- [plate](https://johnbr0phy.github.io/faces/plate.html) — a sheet of heads.
+  Click one and they look side to side. Space for another plate.
