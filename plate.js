@@ -22,6 +22,7 @@
   let seed = D.parseSeed();
   let faces = [];
   let sheet = null;
+  let blank = null;
   let lastCssW = 0;
   let lastCssH = 0;
   let lastDpr = 1;
@@ -121,37 +122,46 @@
     };
   }
 
-  function blitBox(box) {
-    if (!sheet) return;
+  function blitBox(src, box) {
+    if (!src) return;
     const dpr = lastDpr;
     ctx.drawImage(
-      sheet,
+      src,
       Math.round(box.x * dpr), Math.round(box.y * dpr),
       Math.round(box.w * dpr), Math.round(box.h * dpr),
       box.x, box.y, box.w, box.h
     );
   }
 
+  function boxesOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
   function paintLooking(now) {
-    const looking = faces.filter((f) => f.looking);
+    const active = faces.filter((f) => f.looking);
+    if (!active.length) return;
     ctx.save();
     ctx.setTransform(lastDpr, 0, 0, lastDpr, 0, 0);
-    looking.forEach((face) => blitBox(dirtyBox(face)));
-    looking.forEach((face) => {
-      const el = (now - face.startedAt) / 1000;
-      if (el >= PERIOD) {
-        face.looking = false;
-        return;
-      }
+    const dirty = active.map(dirtyBox);
+    // Paper only — the still sheet still has the old hoop, and inking a
+    // new yaw on top of it is how you get a double outline.
+    dirty.forEach((box) => blitBox(blank, box));
+    faces.forEach((face) => {
       const box = dirtyBox(face);
+      if (!dirty.some((d) => boxesOverlap(d, box))) return;
+      const el = (now - face.startedAt) / 1000;
+      const turning = face.looking && el < PERIOD;
       ctx.save();
       ctx.beginPath();
-      ctx.rect(box.x, box.y, box.w, box.h);
+      dirty.forEach((d) => ctx.rect(d.x, d.y, d.w, d.h));
       ctx.clip();
-      inkHead(ctx, face, el / PERIOD, face.frame);
+      inkHead(ctx, face, turning ? el / PERIOD : null, turning ? face.frame : 0);
       ctx.restore();
     });
     ctx.restore();
+    active.forEach((face) => {
+      if ((now - face.startedAt) / 1000 >= PERIOD) face.looking = false;
+    });
   }
 
   function tick(now) {
@@ -260,6 +270,7 @@
     faces = layFaces(cssW, cssH);
     ready = false;
     sheet = null;
+    blank = null;
 
     const bd = document.createElement("canvas");
     bd.width = canvas.width;
@@ -270,6 +281,12 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.__dpr = dpr;
     D.paper(bc, cssW, cssH, D.rngFor(seed, "paper"));
+    const hits = drawChrome(bc, cssW, cssH, seed);
+    const ground = document.createElement("canvas");
+    ground.width = bd.width;
+    ground.height = bd.height;
+    ground.getContext("2d").drawImage(bd, 0, 0);
+    blank = ground;
     sheet = bd;
     blitSheet();
     if (id !== buildId) return null;
@@ -281,8 +298,8 @@
       await waitFrame();
     }
     if (id !== buildId) return null;
-    const hits = drawChrome(bc, cssW, cssH, seed);
     D.grainPass(bc, dpr);
+    D.grainPass(blank.getContext("2d"), dpr);
     blitSheet();
     ready = true;
     return hits;
