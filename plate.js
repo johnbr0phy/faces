@@ -222,17 +222,17 @@
     const ch = (h - band) / ROWS;
     const out = [];
     for (let r = 0; r < ROWS; r++) {
-      const rowDx = rng0.f(-cw * 0.04, cw * 0.04);
-      const rowDy = rng0.f(-ch * 0.04, ch * 0.04);
-      const rowS = rng0.f(0.96, 1.04);
+      const rowDx = rng0.f(-cw * 0.02, cw * 0.02);
+      const rowDy = rng0.f(-ch * 0.02, ch * 0.02);
+      const rowS = rng0.f(0.97, 1.03);
       for (let col = 0; col < COLS; col++) {
         const idx = r * COLS + col;
         const dude = D.makeDude(D.rngFor(seed, "person", idx));
         const rng = D.rngFor(seed, "mark", idx);
-        // Fill the cell with a head. The body is not drawn.
-        const s = Math.min(cw, ch) * rng.f(0.38, 0.44) * rowS;
-        const cx = Math.max(s * 1.15, Math.min(w - s * 1.15, cw * (col + 0.5) + rowDx + rng.f(-cw * 0.03, cw * 0.03)));
-        const cy = Math.max(s * 1.2, Math.min(h - band - s * 0.4, 12 + ch * (r + 0.5) + rowDy + rng.f(-ch * 0.03, ch * 0.03)));
+        // Leave air around each head so the sheet reads as a plate, not a crowd.
+        const s = Math.min(cw, ch) * rng.f(0.26, 0.30) * rowS;
+        const cx = Math.max(s * 1.2, Math.min(w - s * 1.2, cw * (col + 0.5) + rowDx + rng.f(-cw * 0.02, cw * 0.02)));
+        const cy = Math.max(s * 1.25, Math.min(h - band - s * 0.45, 16 + ch * (r + 0.5) + rowDy + rng.f(-ch * 0.02, ch * 0.02)));
         out.push({
           idx,
           dude,
