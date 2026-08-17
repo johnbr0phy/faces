@@ -103,19 +103,15 @@
       colour: faceRng(face, "colour"),
       hair: faceRng(face, "hair"),
     };
-    // The homepage dude.js draws a full figure. Clip to the skull so this
-    // page never needs a fork of that file.
-    c.save();
-    c.beginPath();
-    c.rect(face.cx - face.s * 1.75, face.cy - face.s * 1.9, face.s * 3.5, face.s * 2.85);
-    c.clip();
-    D.figureInk(c, R, face.dude, face.cx, face.cy, face.s);
-    c.restore();
+    D.figureInk(c, R, face.dude, face.cx, face.cy, face.s, {
+      headOnly: true,
+      neck: face.neck,
+    });
     D.rest();
   }
 
   function dirtyBox(face) {
-    const pad = face.s * 1.75;
+    const pad = face.s * 2.05;
     const x = Math.max(0, face.cx - pad);
     const y = Math.max(0, face.cy - pad);
     return {
@@ -218,27 +214,37 @@
     const foot = chromeLayout(w, h);
     const band = Math.max(36, h - foot.top + 8);
     chooseGrid(w, h - band);
-    const cw = w / COLS;
-    const ch = (h - band) / ROWS;
+    const insetX = Math.max(28, w * 0.03);
+    const insetY = Math.max(22, (h - band) * 0.04);
+    const gridW = w - insetX * 2;
+    const gridH = h - band - insetY * 2;
+    const cw = gridW / COLS;
+    const ch = gridH / ROWS;
     const out = [];
     for (let r = 0; r < ROWS; r++) {
-      const rowDx = rng0.f(-cw * 0.02, cw * 0.02);
-      const rowDy = rng0.f(-ch * 0.02, ch * 0.02);
+      const rowDx = rng0.f(-cw * 0.015, cw * 0.015);
+      const rowDy = rng0.f(-ch * 0.015, ch * 0.015);
       const rowS = rng0.f(0.97, 1.03);
       for (let col = 0; col < COLS; col++) {
         const idx = r * COLS + col;
         const dude = D.makeDude(D.rngFor(seed, "person", idx));
         const rng = D.rngFor(seed, "mark", idx);
-        // Leave air around each head so the sheet reads as a plate, not a crowd.
-        const s = Math.min(cw, ch) * rng.f(0.26, 0.30) * rowS;
-        const cx = Math.max(s * 1.2, Math.min(w - s * 1.2, cw * (col + 0.5) + rowDx + rng.f(-cw * 0.02, cw * 0.02)));
-        const cy = Math.max(s * 1.25, Math.min(h - band - s * 0.45, 16 + ch * (r + 0.5) + rowDy + rng.f(-ch * 0.02, ch * 0.02)));
+        const s = Math.min(cw, ch) * rng.f(0.20, 0.24) * rowS;
+        const cx = Math.max(
+          insetX + s * 1.35,
+          Math.min(w - insetX - s * 1.35, insetX + cw * (col + 0.5) + rowDx + rng.f(-cw * 0.015, cw * 0.015))
+        );
+        const cy = Math.max(
+          insetY + s * 1.4,
+          Math.min(h - band - s * 0.55, insetY + ch * (r + 0.5) + rowDy + rng.f(-ch * 0.015, ch * 0.015))
+        );
         out.push({
           idx,
           dude,
           cx,
           cy,
           s,
+          neck: D.rngFor(seed, "neck", idx).chance(0.3),
           looking: false,
           startedAt: 0,
           frame: 0,
@@ -345,8 +351,20 @@
     return best;
   }
 
+  function stopLooking(face) {
+    if (!face.looking) return;
+    face.looking = false;
+    ctx.save();
+    ctx.setTransform(lastDpr, 0, 0, lastDpr, 0, 0);
+    blitBox(sheet, dirtyBox(face));
+    ctx.restore();
+  }
+
   function lookAt(face) {
     if (!face || !ready) return;
+    faces.forEach((f) => {
+      if (f !== face) stopLooking(f);
+    });
     face.looking = true;
     face.startedAt = performance.now();
     face.frame = 0;
