@@ -38,11 +38,28 @@ then visit `http://localhost:8765`.
 Space, click, or tap for another. The seed is in the URL (`?s=4929`), so every
 dude is reproducible.
 
+`a  make him move` and `m  something else` are written under the label at the
+foot of the page, in the same hand as everything else, and pressing the words
+does what pressing the key does — a phone has no A to press. He starts moving.
+`?anim=0` holds him still. `?m=walk|wave|jump|look|dance|shrug` insists on one;
+without `?m` he does whatever his seed says he does.
+
+He is not a picture being tweened. The head is already a skull with a yaw, a
+pitch and a roll, and the body is already a stick rig the silhouette is grown
+around; animating him is a matter of moving that rig and inking him again.
+Twelve drawings a second, each one drawn from scratch, so the line boils the
+way a line does when a hand draws it twice and the head turns in space rather
+than skewing on the page. The sheet — paper, grain, name, the words at the
+foot of the page — is laid down once and reused, because none of it moves and
+the grain pass alone costs three times what the whole figure does.
+
 `?plate=1` renders a sheet of 48 heads on one page.
 
 | | |
 | --- | --- |
 | `?s=4929` | that dude, every time |
+| `?anim=0` | still |
+| `?m=walk` | walk, wave, jump, look, dance, shrug |
 | `?plate=1` | a sheet of 48 heads |
 
 `scripts/shot.sh` screenshots seeded dudes; `scripts/plate.sh` does the same for

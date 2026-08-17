@@ -93,6 +93,233 @@
     return rgbHex(pr * k, pg * k, pb * k);
   }
 
+  // ---------- motion ----------
+  // The dude is already a 2D drawing of a 3D thing: the head is a skull with a
+  // yaw, a pitch and a roll, and the body is a stick rig — two three-point arm
+  // chains and two three-point leg chains — that the silhouette is grown
+  // around. Nothing about either is static. So animating him is not a matter
+  // of tweening pictures; it is a matter of moving the rig and drawing him
+  // again, which is what a flipbook is.
+  //
+  // Every offset below is in units of the body's own s, and is ADDED to the
+  // joint the person already had. His stance, his asymmetry, the swing his
+  // arms hang at — all of that survives, and the motion rides on top of it.
+  // A walk that replaced the pose outright would make everyone walk the same.
+  const REST = {
+    on: false,
+    yaw: 0, pitch: 0, roll: 0, // added to the skull's own
+    bob: 0, sway: 0, lean: 0, // whole figure
+    sh: 0, // shoulders, for a shrug
+    ground: 1, // 1 = feet planted, 0 = the floor has let go
+    arm: [{ ex: 0, ey: 0, hx: 0, hy: 0 }, { ex: 0, ey: 0, hx: 0, hy: 0 }], // [left, right]
+    leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+  };
+  let MOTION = REST;
+
+  // The line itself crawls between frames. Hand-drawn animation boils because
+  // the second drawing is a second drawing, not the first one moved — and a
+  // rig that holds perfectly still between poses is the one thing that gives
+  // away that a computer is doing the inbetweens. This shifts the noise field
+  // the nib wanders through, so the ink is redrawn rather than replayed, while
+  // every structural decision about the dude stays exactly where it was.
+  let BOIL = 0;
+
+  const TAU = Math.PI * 2;
+
+  // Ease that sits at rest and snaps — a body accelerating out of a pose.
+  function swing(x) {
+    return Math.sin(x * TAU);
+  }
+  // Positive half only: a limb that lifts and comes back down but never
+  // travels through the floor.
+  function lift(x) {
+    return Math.max(0, Math.sin(x * TAU));
+  }
+  // A sine that lingers at the extremes. A look, a shrug, a hip parked over
+  // one foot — none of those pass through the middle at constant speed. They
+  // get there and stay a beat. p < 1 square-ifies the wave.
+  function holdSin(t, p = 0.45) {
+    const s = Math.sin(t * TAU);
+    return (s < 0 ? -1 : 1) * Math.pow(Math.abs(s), p);
+  }
+
+  const MOTIONS = {
+    // Marching towards you. Seen from the front a walk is not a side-on
+    // scissor — it is a small knee coming up, the swing foot just clearing
+    // the ground, weight parked on the other hip, arms counter-swinging, and
+    // the whole body rising twice a cycle on the ball of the stance foot.
+    // A high knee is a parade; a scissor is the splits. Keep the step short.
+    walk: (t) => {
+      const a = lift(t); // left swing
+      const b = lift(t + 0.5); // right swing
+      const w = swing(t); // + when left is in the air: weight is on the right
+      // two rises per cycle, highest at midstance, a hair of dip at contact
+      const rise = Math.abs(Math.sin(t * TAU));
+      const dip = Math.abs(Math.cos(t * TAU));
+      return {
+        yaw: w * 0.05,
+        roll: -w * 0.035,
+        pitch: -rise * 0.02,
+        bob: -rise * 0.05 + dip * 0.02,
+        sway: w * 0.11,
+        lean: w * 0.07,
+        arm: [
+          { ex: -w * 0.05, ey: 0, hx: -w * 0.16, hy: -b * 0.05 + a * 0.03 },
+          { ex: w * 0.05, ey: 0, hx: w * 0.16, hy: -a * 0.05 + b * 0.03 },
+        ],
+        leg: [
+          { kx: -a * 0.03 + b * 0.04, ky: -a * 0.12 + b * 0.04, fx: -a * 0.02 + b * 0.05, fy: -a * 0.2 },
+          { kx: b * 0.03 - a * 0.04, ky: -b * 0.12 + a * 0.04, fx: b * 0.02 - a * 0.05, fy: -b * 0.2 },
+        ],
+      };
+    },
+
+    // One arm up, forearm swinging from the elbow, the way a person actually
+    // waves — the upper arm parks and the hand travels an arc. Weight sits
+    // on the waving side; the other hip goes soft. The head is aimed at
+    // someone, and it nods a little with each flick.
+    wave: (t) => {
+      const raw = Math.sin(t * TAU * 2); // two waves a cycle
+      const f = (raw < 0 ? -1 : 1) * Math.pow(Math.abs(raw), 0.6);
+      const flick = 1 - Math.abs(f);
+      return {
+        yaw: 0.16 + f * 0.04,
+        roll: -0.08 + f * 0.03,
+        pitch: -0.03 - flick * 0.02,
+        bob: -flick * 0.02,
+        sway: 0.07,
+        lean: 0.05,
+        arm: [
+          { ex: -0.03, ey: 0.03, hx: -0.08, hy: 0.05 },
+          { ex: 0.38, ey: -1.0, hx: 0.7 + f * 0.34, hy: -2.68 + Math.abs(f) * 0.22 },
+        ],
+        leg: [
+          { kx: 0.03, ky: 0.03, fx: 0.04, fy: 0 },
+          { kx: -0.01, ky: 0, fx: -0.02, fy: 0 },
+        ],
+      };
+    },
+
+    // Anticipate, leave the ground, hang, land. The squash on the way in and
+    // out is in the bob and the knees; without it he floats. MOTION.ground
+    // has to let go in the air or the feet stay planted and the legs stretch
+    // like rubber, which is the thing that made the old jump look wonky.
+    jump: (t) => {
+      // crouch long enough to read, hang in the middle, land and settle
+      let crouch = 0;
+      let air = 0;
+      let land = 0;
+      // drop, hold the coil, then leave — a sine that returns to zero
+      // before takeoff is a dead frame between squat and air
+      if (t < 0.12) crouch = t / 0.12;
+      else if (t < 0.22) crouch = 1;
+      else if (t < 0.78) {
+        air = Math.sin(((t - 0.22) / 0.56) * Math.PI);
+        crouch = Math.max(0, 1 - (t - 0.22) / 0.1);
+      } else land = Math.sin(((t - 0.78) / 0.22) * Math.PI);
+      const hang = Math.pow(air, 0.55);
+      return {
+        ground: 1 - hang,
+        pitch: crouch * 0.12 + land * 0.08 - hang * 0.1,
+        roll: 0,
+        yaw: 0,
+        bob: crouch * 0.22 + land * 0.18 - hang * 1.05,
+        sway: 0,
+        arm: [
+          { ex: -0.1 * crouch - 0.16 * hang, ey: 0.28 * crouch - 0.55 * hang + 0.12 * land, hx: -0.16 * crouch - 0.28 * hang, hy: 0.4 * crouch - 1.55 * hang + 0.2 * land },
+          { ex: 0.1 * crouch + 0.16 * hang, ey: 0.28 * crouch - 0.55 * hang + 0.12 * land, hx: 0.16 * crouch + 0.28 * hang, hy: 0.4 * crouch - 1.55 * hang + 0.2 * land },
+        ],
+        leg: [
+          { kx: -0.04 * crouch + 0.02 * hang, ky: 0.1 * crouch - 0.2 * hang + 0.08 * land, fx: -0.05 * crouch + 0.04 * hang, fy: -0.28 * hang },
+          { kx: 0.04 * crouch - 0.02 * hang, ky: 0.1 * crouch - 0.2 * hang + 0.08 * land, fx: 0.05 * crouch - 0.04 * hang, fy: -0.28 * hang },
+        ],
+      };
+    },
+
+    // The skull turning in space is the whole point of there being a skull.
+    // A person looking around does not sine-wave their head on a frozen
+    // body — they get to a side, hold it, and the shoulders catch up late.
+    look: (t) => {
+      const turn = holdSin(t, 0.4);
+      const follow = holdSin(t - 0.08, 0.55);
+      const nod = Math.sin(t * TAU * 2 + 1.1);
+      return {
+        yaw: turn * 0.56,
+        pitch: nod * 0.07 - Math.abs(turn) * 0.03,
+        roll: turn * 0.06,
+        bob: -Math.abs(turn) * 0.015,
+        sway: follow * 0.05,
+        lean: follow * 0.09,
+        arm: [
+          { ex: follow * 0.03, ey: 0, hx: follow * 0.07, hy: Math.abs(turn) * 0.02 },
+          { ex: follow * 0.03, ey: 0, hx: follow * 0.07, hy: Math.abs(turn) * 0.02 },
+        ],
+        leg: [
+          { kx: 0, ky: 0, fx: -follow * 0.03, fy: 0 },
+          { kx: 0, ky: 0, fx: follow * 0.03, fy: 0 },
+        ],
+      };
+    },
+
+    // Weight parked on one hip, then the other — held, not swung through.
+    // The up-arm is the weighted side; the other stays lower. Head arrives
+    // a beat after the hips, the way a body actually leads a step.
+    dance: (t) => {
+      const hip = holdSin(t, 0.38);
+      const bounce = Math.abs(Math.sin(t * TAU * 2));
+      const leftUp = Math.max(0, -hip);
+      const rightUp = Math.max(0, hip);
+      const head = holdSin(t - 0.12, 0.4);
+      return {
+        yaw: head * 0.16,
+        roll: -hip * 0.18,
+        pitch: -bounce * 0.035,
+        bob: -bounce * 0.07,
+        sway: hip * 0.2,
+        lean: hip * 0.16,
+        arm: [
+          { ex: -0.16 + hip * 0.06, ey: -0.18 - leftUp * 0.38 - bounce * 0.08, hx: -0.28 + hip * 0.12, hy: -0.75 - leftUp * 0.55 - bounce * 0.12 },
+          { ex: 0.16 + hip * 0.06, ey: -0.18 - rightUp * 0.38 - bounce * 0.08, hx: 0.28 + hip * 0.12, hy: -0.75 - rightUp * 0.55 - bounce * 0.12 },
+        ],
+        leg: [
+          { kx: hip * 0.03, ky: rightUp * 0.03 - leftUp * 0.05 * bounce, fx: hip * 0.07, fy: -rightUp * 0.1 * bounce },
+          { kx: hip * 0.03, ky: leftUp * 0.03 - rightUp * 0.05 * bounce, fx: hip * 0.07, fy: -leftUp * 0.1 * bounce },
+        ],
+      };
+    },
+
+    // Shoulders up, head down into them, elbows out, hands turned out.
+    // Held at the top — a shrug is a pose with a pause in it, not a wobble.
+    shrug: (t) => {
+      const k = t < 0.18 ? t / 0.18 : t < 0.72 ? 1 : Math.max(0, 1 - (t - 0.72) / 0.28);
+      const e = k * k * (3 - 2 * k);
+      return {
+        yaw: 0,
+        pitch: e * 0.24,
+        roll: 0,
+        bob: e * 0.06,
+        sway: 0,
+        sh: -e * 0.4,
+        arm: [
+          { ex: -e * 0.38, ey: -e * 0.52, hx: -e * 0.5, hy: -e * 0.95 },
+          { ex: e * 0.38, ey: -e * 0.52, hx: e * 0.5, hy: -e * 0.95 },
+        ],
+        leg: [{ kx: 0, ky: 0, fx: 0, fy: 0 }, { kx: 0, ky: 0, fx: 0, fy: 0 }],
+      };
+    },
+  };
+
+  const MOTION_NAMES = Object.keys(MOTIONS);
+
+  // How long one cycle takes, in seconds. A walk is a stroll, a look is a linger.
+  const MOTION_PERIOD = { walk: 1.18, wave: 1.85, jump: 1.7, look: 5.0, dance: 1.7, shrug: 2.8 };
+
+  function motionAt(kind, t) {
+    const f = MOTIONS[kind];
+    if (!f) return REST;
+    return { ...REST, ...f(((t % 1) + 1) % 1), on: true };
+  }
+
   // ---------- seeded rng ----------
   function mulberry32(a) {
     return function () {
@@ -145,6 +372,14 @@
 
   function rngFor(seed, label, idx) {
     return new Rng(hash32(seed, label, idx || 0));
+  }
+
+  // A stream keyed off the seed, not off how far the pen has got. Identity
+  // picks (a lid, a nostril, a parting, how wide the mouth is) have to come
+  // from here. The drawing stream is spent on the stroke, and a turn that
+  // shortens a line spends fewer rolls, which used to re-roll the face.
+  function lockRng(rng, label) {
+    return new Rng(hash32(rng.seed, label, 0));
   }
 
   function parseSeed() {
@@ -244,8 +479,8 @@
     for (let i = 0; i < n; i++) {
       const u = (i / (n - 1)) * L;
       const wob =
-        (fbm2(u * 0.019, sd * 0.013, sd) - 0.5) * 2 * amp +
-        (fbm2(u * 0.105, sd * 0.007, sd + 31) - 0.5) * 2 * amp * 0.3;
+        (fbm2(u * 0.019, sd * 0.013 + BOIL, sd) - 0.5) * 2 * amp +
+        (fbm2(u * 0.105, sd * 0.007 + BOIL * 1.7, sd + 31) - 0.5) * 2 * amp * 0.3;
       P[i] = { x: S[i].x + N0[i].x * wob, y: S[i].y + N0[i].y * wob };
     }
     const NN = normals(P);
@@ -263,8 +498,8 @@
       // which is the thing every critic spots first.
       const t01 = i / (n - 1);
       const cyc = 1.3 + ((sd >>> 3) % 9) * 0.42;
-      const slow = fbm2(t01 * cyc * 2 + 7, sd * 0.011, sd + 5) - 0.5;
-      const slow2 = fbm2(t01 * cyc * 5.5 + 3, sd * 0.017, sd + 211) - 0.5;
+      const slow = fbm2(t01 * cyc * 2 + 7, sd * 0.011 + BOIL * 0.6, sd + 5) - 0.5;
+      const slow2 = fbm2(t01 * cyc * 5.5 + 3, sd * 0.017 + BOIL * 0.9, sd + 211) - 0.5;
       const fast = fbm2(u * 0.185, sd * 0.005, sd + 61) - 0.5;
       // How much the width breathes is the pen's, not the line's. A fineliner
       // holds one width from start to stop; a wet nib swells through every
@@ -475,6 +710,7 @@
       doubled: !!opt.doubled,
       taper: opt.taper,
       overshoot: opt.overshoot,
+      broken: opt.broken,
       w: opt.w ?? 1.8,
       passes: opt.passes ?? 1,
       dry: opt.dry,
@@ -680,6 +916,7 @@
       const rr = r * (1 + (fbm2(Math.cos(a) * 2.2 + x * 0.02, Math.sin(a) * 2.2 + y * 0.02, rng.seed) - 0.5) * 0.18);
       pts.push({ x: x + Math.cos(a) * rr, y: y + Math.sin(a) * rr });
     }
+    inkFill(c, rng, pts, PAPER, 1, Math.max(0.35, r * 0.08));
     if (fill) inkFill(c, rng, pts, INK, 1, Math.max(0.5, r * 0.09));
     inkPoly(c, rng, pts, { closed: true, w, dry: r < 6 ? 0.35 : 1 });
   }
@@ -1257,9 +1494,10 @@
     const ny = hull[(i0 + 1) % n].y - hull[(i0 - 1 + n) % n].y;
     const dir = nx * ax + ny * ay >= 0 ? 1 : -1;
 
-    const half = Math.max(2, Math.round(n * rng.f(0.04, 0.065)));
-    const reach = Math.max(s * 0.09, Math.min(s * 0.3, mag * rng.f(0.55, 1.0)));
-    const lean = rng.f(-0.4, 0.4);
+    const bumpLock = lockRng(rng, "bump");
+    const half = Math.max(2, Math.round(n * bumpLock.f(0.04, 0.065)));
+    const reach = Math.max(s * 0.09, Math.min(s * 0.3, mag * bumpLock.f(0.55, 1.0)));
+    const lean = bumpLock.f(-0.4, 0.4);
     for (let k = -half; k <= half; k++) {
       const j = (((i0 + k) % n) + n) % n;
       const u = (k / half) * dir; // +1 is chinward, whichever way the head faces
@@ -1302,6 +1540,7 @@
   // nose and not a lump: an under-notch and a nostril, tucked back into the
   // face from the tip.
   function silhouetteNose(c, rng, skull, hull, bump, prof) {
+    const lock = lockRng(rng, "silnose");
     const s = skull.s;
     const n = hull.length;
     const tip = hull[((bump.i0 % n) + n) % n];
@@ -1313,30 +1552,96 @@
 
     // The contour has already said everything but the underside. One crease
     // running back from under the tip, and a nostril where it stops.
+    // Same plug as a drawn nose: paper over the knuckle so a wash behind
+    // cannot show through the tip.
+    inkFill(c, rng, [
+      { x: skull.cx * 0.55 + tip.x * 0.45, y: skull.cy * 0.35 + tip.y * 0.65 },
+      { x: tip.x + ux * s * 0.02, y: tip.y + uy * s * 0.02 },
+      { x: tip.x - ax * s * 0.12 + ux * s * 0.04, y: tip.y - ay * s * 0.12 + uy * s * 0.04 },
+      { x: tip.x - ax * s * 0.22, y: tip.y - ay * s * 0.22 },
+    ], PAPER, 1, 0.4);
+
     const a = {
-      x: tip.x - ux * s * rng.f(0.02, 0.06) + ax * s * rng.f(0.03, 0.07),
-      y: tip.y - uy * s * rng.f(0.02, 0.06) + ay * s * rng.f(0.03, 0.07),
+      x: tip.x - ux * s * lock.f(0.02, 0.06) + ax * s * lock.f(0.03, 0.07),
+      y: tip.y - uy * s * lock.f(0.02, 0.06) + ay * s * lock.f(0.03, 0.07),
     };
-    const back = s * rng.f(0.08, 0.17);
-    const b = { x: a.x - ux * back + ax * s * rng.f(0.0, 0.04), y: a.y - uy * back + ay * s * rng.f(0.0, 0.04) };
+    const back = s * lock.f(0.08, 0.17);
+    const b = { x: a.x - ux * back + ax * s * lock.f(0.0, 0.04), y: a.y - uy * back + ay * s * lock.f(0.0, 0.04) };
     inkPoly(c, rng, [a, { x: (a.x + b.x) / 2 - ax * s * 0.012, y: (a.y + b.y) / 2 - ay * s * 0.012 }, b], {
-      w: w * rng.f(0.8, 1.1),
+      w: w * lock.f(0.8, 1.1),
       dry: 0.6,
     });
-    if (rng.chance(0.6)) inkCirc(c, rng, b.x, b.y, s * rng.f(0.013, 0.024), w * 0.5, rng.chance(0.4));
+    if (lock.chance(0.6)) inkCirc(c, rng, b.x, b.y, s * lock.f(0.013, 0.024), w * 0.5, lock.chance(0.4));
     // sometimes the bridge is carried back up the inside of the contour
-    if (rng.chance(0.3)) {
-      const u0 = { x: tip.x - ux * s * rng.f(0.01, 0.04), y: tip.y - uy * s * rng.f(0.01, 0.04) };
+    if (lock.chance(0.3)) {
+      const u0 = { x: tip.x - ux * s * lock.f(0.01, 0.04), y: tip.y - uy * s * lock.f(0.01, 0.04) };
       const u1 = {
-        x: u0.x - ax * s * rng.f(0.22, 0.4) - ux * s * rng.f(0.02, 0.08),
-        y: u0.y - ay * s * rng.f(0.22, 0.4) - uy * s * rng.f(0.02, 0.08),
+        x: u0.x - ax * s * lock.f(0.22, 0.4) - ux * s * lock.f(0.02, 0.08),
+        y: u0.y - ay * s * lock.f(0.22, 0.4) - uy * s * lock.f(0.02, 0.08),
       };
-      inkPoly(c, rng, [u1, u0], { w: w * rng.f(0.5, 0.75), dry: 0.9 });
+      inkPoly(c, rng, [u1, u0], { w: w * lock.f(0.5, 0.75), dry: 0.9 });
     }
 
     const bp = prof.browP;
     const drop = Math.max(s * 0.4, (tip.x - bp.x) * ax + (tip.y - bp.y) * ay);
-    return { ax, ay, browP: bp, base: drop + s * 0.05, outer: null };
+    return { ax, ay, browP: bp, base: drop + s * 0.05, outer: null, bump };
+  }
+
+  // The flesh of the nose, closed toward the face — not toward the skull
+  // centre, which would wipe the cheek. Used to hide the hoop and the mouth
+  // that were drawn after the nose and used to show through it.
+  function noseFlesh(skull, nose, hull) {
+    if (nose && nose.outer && nose.outer.length >= 3) {
+      const a = nose.outer[0];
+      const b = nose.outer[nose.outer.length - 1];
+      const bp = nose.browP || { x: skull.cx, y: skull.cy };
+      // Close at the nose's own base, not down toward the mouth.
+      const base = {
+        x: bp.x + (nose.ax || 0) * Math.min(nose.base || 0, skull.s * 0.35) * 0.55,
+        y: bp.y + (nose.ay || 0) * Math.min(nose.base || 0, skull.s * 0.35) * 0.55,
+      };
+      return [{ x: (a.x + b.x) * 0.35 + base.x * 0.3, y: (a.y + b.y) * 0.35 + base.y * 0.3 }].concat(nose.outer);
+    }
+    const bump = nose && nose.bump;
+    if (bump && hull && hull.length > 4) {
+      const n = hull.length;
+      const pts = [];
+      for (let k = -bump.half; k <= bump.half; k++) {
+        pts.push(hull[(((bump.i0 + k) % n) + n) % n]);
+      }
+      if (pts.length < 3) return null;
+      const tip = hull[(((bump.i0 % n) + n) % n)];
+      return [{ x: tip.x - bump.ux * skull.s * 0.2, y: tip.y - bump.uy * skull.s * 0.2 }].concat(pts);
+    }
+    return null;
+  }
+
+  function nearPath(p, path, rad) {
+    const r2 = rad * rad;
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1];
+      const b = path[i];
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const ab2 = abx * abx + aby * aby || 1;
+      let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / ab2;
+      if (t < 0) t = 0;
+      else if (t > 1) t = 1;
+      const dx = p.x - (a.x + abx * t);
+      const dy = p.y - (a.y + aby * t);
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  }
+
+  function coverNose(c, rng, skull, nose, hull) {
+    const flesh = noseFlesh(skull, nose, hull);
+    if (!flesh) return;
+    inkFill(c, rng, flesh, PAPER, 1, 0.35);
+    refibre(c, rng, flesh);
+    if (nose.outer && nose.outer.length > 1) {
+      inkPoly(c, rng, nose.outer, { w: skull.s * 0.024, dry: 0.4, overshoot: false });
+    }
   }
 
   function headFill(c, rng, skull, hull, skinWash) {
@@ -1380,9 +1685,10 @@
   }
 
   function headOutline(c, rng, skull, hull, covered) {
+    const lock = lockRng(rng, "outline");
     const n = hull.length;
     const w0 = skull.s * 0.03 * (skull.pen || 1);
-    const ov = Math.round(n * rng.f(0.05, 0.11));
+    const ov = Math.round(n * lock.f(0.05, 0.11));
     // A head is not one closed loop. It is a cranium drawn over and a jaw
     // drawn under, which overshoot and cross where they meet.
     const arc = (a, b) => {
@@ -1394,9 +1700,9 @@
             const mid = out[Math.floor(out.length / 2)];
             const low = mid.y > skull.cy;
             inkPoly(c, rng, out.slice(), {
-              w: w0 * (low ? rng.f(1.2, 1.55) : rng.f(0.8, 0.95)),
+              w: w0 * (low ? lock.f(1.2, 1.55) : lock.f(0.8, 0.95)),
               dry: low ? 0.25 : 0.35,
-              doubled: rng.chance(0.24),
+              doubled: lock.chance(0.24),
             });
           }
           out.length = 0;
@@ -1408,27 +1714,39 @@
         const mid = out[Math.floor(out.length / 2)];
         const low = mid.y > skull.cy;
         inkPoly(c, rng, out, {
-          w: w0 * (low ? rng.f(1.2, 1.55) : rng.f(0.8, 0.95)),
+          w: w0 * (low ? lock.f(1.2, 1.55) : lock.f(0.8, 0.95)),
           dry: low ? 0.25 : 0.35,
-          doubled: rng.chance(0.24),
+          doubled: lock.chance(0.24),
         });
       }
     };
     arc(-ov, Math.round(n * 0.5) + ov);
     arc(Math.round(n * 0.5) - ov, n + ov);
-    if (rng.chance(0.12)) {
-      const a0 = Math.round(n * rng.f(0.02, 0.12));
-      arc(a0, a0 + Math.round(n * rng.f(0.12, 0.26)));
+    if (lock.chance(0.12)) {
+      const a0 = Math.round(n * lock.f(0.02, 0.12));
+      arc(a0, a0 + Math.round(n * lock.f(0.12, 0.26)));
     }
   }
 
   function drawEars(c, rng, skull) {
-    const earL = landmark(skull, { x: -0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
-    const earR = landmark(skull, { x: 0.88, y: 0.02 + rng.f(-0.12, 0.12), z: 0.05 });
-    const er = skull.s * rng.f(0.14, 0.25);
+    const lock = lockRng(rng, "ears");
+    const inkL = lockRng(rng, "earInkL");
+    const inkR = lockRng(rng, "earInkR");
+    const yL = lock.f(-0.12, 0.12);
+    const yR = lock.f(-0.12, 0.12);
+    const er = skull.s * lock.f(0.1, 0.17);
+    const kL = lock.f(0.85, 1.15);
+    const kR = lock.f(0.85, 1.15);
+    const earL = landmark(skull, { x: -0.88, y: 0.02 + yL, z: 0.05 });
+    const earR = landmark(skull, { x: 0.88, y: 0.02 + yR, z: 0.05 });
+    // Like the nose: a mark on the potato when that side faces us, gone
+    // when it turns away. Not a separate lump bolted to the outline.
+    const yaw = skull.yaw || 0;
+    const facing = Math.abs(yaw) < 0.2;
+    const show = (p) => (facing ? p.nz > -0.18 : p.nz > 0.1);
     const out = [];
-    if (earL.nz > -0.3) out.push(drawEar(c, rng, earL, er * rng.f(0.85, 1.15), -1));
-    if (earR.nz > -0.3) out.push(drawEar(c, rng, earR, er * rng.f(0.85, 1.15), 1));
+    if (show(earL)) out.push(drawEar(c, inkL, earL, er * kL, -1));
+    if (show(earR)) out.push(drawEar(c, inkR, earR, er * kR, 1));
     return out;
   }
 
@@ -1482,21 +1800,21 @@
   }
 
   function drawEar(c, rng, L, r, side) {
-    // drawn in the ear's own frame, so it leans with the head rather than
-    // staying a fixed vertical C bolted to the silhouette
+    // A C on the surface, the same as a nose is a mark on the face.
+    // No fill — a filled lobe is what made it a separate potato.
     const F = (a, b) => onSurface(L, a, b);
     const pts = [];
-    const n = 10;
+    const n = 8;
     for (let i = 0; i <= n; i++) {
       const t = i / n;
-      const a = -Math.PI * 0.55 + t * Math.PI * 1.15;
-      pts.push(F(Math.cos(a) * r * side, Math.sin(a) * r * 1.15));
+      const a = -Math.PI * 0.45 + t * Math.PI * 0.95;
+      pts.push(F(Math.cos(a) * r * side * 0.72, Math.sin(a) * r * 0.95));
     }
-    inkPoly(c, rng, pts, { w: r * 0.14 });
-    if (rng.chance(0.6)) {
-      const q0 = F(side * r * 0.15, -r * 0.2);
-      const q1 = F(side * r * 0.35, r * 0.25);
-      inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, r * 0.1);
+    inkPoly(c, rng, pts, { w: r * 0.12, dry: 0.7 });
+    if (lockRng(rng, "inner").chance(0.55)) {
+      const q0 = F(side * r * 0.12, -r * 0.12);
+      const q1 = F(side * r * 0.22, r * 0.16);
+      inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, r * 0.08);
     }
     return pts;
   }
@@ -1536,7 +1854,7 @@
       else if (sh === "receded") y += Math.pow(center, 1.6) * 0.1 - temple * 0.16;
       else if (sh === "jagged") y += (Math.round(Math.sin(u * 4.7 + 1.3) * 2) / 2) * 0.07;
       else if (sh === "low") y += 0.07 - temple * 0.03;
-      y += (fbm2(u * 1.6 + 4, skull.yaw * 2 + (rng.seed % 53) * 0.07, rng.seed) - 0.5) * wob * 2;
+      y += (fbm2(u * 1.6 + 4, (rng.seed % 53) * 0.07, rng.seed) - 0.5) * wob * 2;
       // Hair may sit low on the brow; it may not cross the eyes. A side sweep
       // plus a side bias could put the hairline at eye level on one side, and
       // the mass then read as a black bar laid across the face.
@@ -1616,12 +1934,13 @@
   function hairMass(skull, hull, rng, opt = {}) {
     // per-seed volume and reach, on top of whatever the style asked for, so
     // the same cap does not come out at forty scales and rotations
+    const cut = lockRng(rng, "mass");
     opt = Object.assign({}, opt, {
-      puff: (opt.puff ?? 0.05) * rng.f(0.7, 1.25),
+      puff: (opt.puff ?? 0.05) * cut.f(0.7, 1.25),
       // u spans (t-0.5)*PI*wrap*1.9, so wrap above ~1.05 sends the hairline
       // round the back of the skull and the mass swallows the whole face
-      wrap: Math.min(1.05, (opt.wrap ?? 1.02) * rng.f(0.84, 1.08)),
-      sideBias: (opt.sideBias ?? 0) + rng.f(-0.1, 0.1),
+      wrap: Math.min(1.05, (opt.wrap ?? 1.02) * cut.f(0.84, 1.08)),
+      sideBias: (opt.sideBias ?? 0) + cut.f(-0.1, 0.1),
     });
     const front = frontRun(hairline(skull, rng, opt));
     if (!front || front.length < 3) return null;
@@ -1693,7 +2012,8 @@
   // the caps read as one shape however the parameters moved. These reshape
   // the outer edge itself, which is the part that reads at grid scale.
   function outerProfile(top, skull, rng, opt) {
-    const kind = opt.outer ?? rng.pick(["skull", "skull", "quiff", "flattop", "dome", "wedge", "wedge", "sweep"]);
+    const lock = lockRng(rng, "outer");
+    const kind = opt.outer ?? lock.pick(["skull", "skull", "quiff", "flattop", "dome", "wedge", "wedge", "sweep"]);
     if (kind === "skull") return top;
     const n = top.length;
     const s = skull.s;
@@ -1705,9 +2025,9 @@
     };
     if (kind === "quiff") {
       // piled up over one temple and falling away
-      const at = rng.f(0.12, 0.42);
-      const w = rng.f(0.1, 0.3);
-      const h = s * rng.f(0.1, 0.26);
+      const at = lock.f(0.12, 0.42);
+      const w = lock.f(0.1, 0.3);
+      const h = s * lock.f(0.1, 0.26);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         const g = Math.exp(-Math.pow((t - at) / w, 2));
@@ -1719,8 +2039,8 @@
       // always outward — a negative height used to push that side inside the
       // skull and could fold the hair polygon over itself. Direction is a
       // choice of which temple is high, not a sign flip.
-      const h = s * rng.f(0.07, 0.2);
-      const flip = rng.chance(0.5);
+      const h = s * lock.f(0.07, 0.2);
+      const flip = lock.chance(0.5);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         const u = flip ? 1 - t : t;
@@ -1729,7 +2049,7 @@
     }
     if (kind === "dome") {
       // volume all round, falling off at the temples
-      const h = s * rng.f(0.09, 0.25);
+      const h = s * lock.f(0.09, 0.25);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         return push(p, h * Math.sin(t * Math.PI));
@@ -1737,8 +2057,8 @@
     }
     if (kind === "sweep") {
       // combed hard to one side: long over one temple, cropped at the other
-      const dir = rng.chance(0.5) ? 1 : -1;
-      const h = s * rng.f(0.08, 0.22);
+      const dir = lock.chance(0.5) ? 1 : -1;
+      const h = s * lock.f(0.08, 0.22);
       return top.map((p, i) => {
         const t = i / (n - 1 || 1);
         const u = dir > 0 ? t : 1 - t;
@@ -1748,8 +2068,8 @@
     // flattop: cut off square across the crown
     let minY = Infinity;
     for (const p of top) if (p.y < minY) minY = p.y;
-    const cut = minY + s * rng.f(-0.12, 0.06);
-    const tilt = rng.f(-0.12, 0.12);
+    const cut = minY + s * lock.f(-0.12, 0.06);
+    const tilt = lock.f(-0.12, 0.12);
     return top.map((p, i) => {
       const t = i / (n - 1 || 1);
       const line = cut + (t - 0.5) * s * tilt;
@@ -1858,7 +2178,7 @@
       crossHatch(c, rng, mass, color, h._s, { passes: 2 });
     } else {
       inkFill(c, rng, mass, color, 1, (opt.rag ?? 2.0) * k * 0.7);
-      loadMass(c, rng, mass, (opt.rag ?? 2.0) * k * 1.6, opt.load ?? rng.f(0.7, 0.88));
+      loadMass(c, rng, mass, (opt.rag ?? 2.0) * k * 1.6, opt.load ?? lockRng(rng, "load").f(0.7, 0.88));
     }
     if (tone === "solid") ragEdge(c, rng, top, h._cx, h._cy, (opt.rag ?? 2.0) * k * 1.5, color);
     else inkPoly(c, rng, top, { w: 1.4 * k, dry: 1.3 });
@@ -1876,20 +2196,21 @@
     const { front, top } = h;
     const k = h._s / 100;
     if (front.length < 4 || top.length < 3) return;
+    const lock = lockRng(rng, "breaks");
 
-    if (rng.chance(0.2)) {
+    if (lock.chance(0.2)) {
       // a parting cut back to the skin
-      const ti = rng.i(1, top.length - 2);
+      const ti = lock.i(1, top.length - 2);
       const fi = Math.max(1, Math.min(front.length - 2, Math.round((1 - ti / (top.length - 1)) * (front.length - 1))));
       const a = top[ti];
       const b = front[fi];
-      const wdt = h._s * rng.f(0.03, 0.075);
+      const wdt = h._s * lock.f(0.03, 0.075);
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const d = Math.hypot(dx, dy) || 1;
       const nx = -dy / d;
       const ny = dx / d;
-      const deep = rng.f(0.55, 1.0);
+      const deep = lock.f(0.55, 1.0);
       const gap = [];
       for (let i = 0; i <= 6; i++) {
         const t = (i / 6) * deep;
@@ -1907,14 +2228,14 @@
     }
 
     // locks hanging past the hairline onto the forehead — these sit in front
-    const locks = rng.chance(0.3) ? rng.i(1, 2) : 0;
+    const locks = lock.chance(0.3) ? lock.i(1, 2) : 0;
     for (let i = 0; i < locks; i++) {
-      const fi = rng.i(1, front.length - 2);
+      const fi = lock.i(1, front.length - 2);
       const p = front[fi];
       if (p.z !== undefined && p.z < 0.05) continue;
-      const drop = h._s * rng.f(0.08, 0.24);
-      const wdt = h._s * rng.f(0.022, 0.05);
-      const lean = rng.f(-0.5, 0.5);
+      const drop = h._s * lock.f(0.08, 0.24);
+      const wdt = h._s * lock.f(0.022, 0.05);
+      const lean = lock.f(-0.5, 0.5);
       const tip = { x: p.x + drop * lean, y: p.y + drop };
       inkFill(c, rng, [
         { x: p.x - wdt, y: p.y - wdt * 0.4 },
@@ -1925,15 +2246,15 @@
     }
 
     // a sideburn running down past the ear
-    if (rng.chance(0.16)) {
-      const end = rng.chance(0.5) ? front[0] : front[front.length - 1];
-      const drop = h._s * rng.f(0.16, 0.42);
-      const wdt = h._s * rng.f(0.05, 0.1);
+    if (lock.chance(0.16)) {
+      const end = lock.chance(0.5) ? front[0] : front[front.length - 1];
+      const drop = h._s * lock.f(0.16, 0.42);
+      const wdt = h._s * lock.f(0.05, 0.1);
       inkFill(c, rng, [
         { x: end.x - wdt, y: end.y },
         { x: end.x + wdt, y: end.y },
-        { x: end.x + wdt * rng.f(0.2, 0.7), y: end.y + drop },
-        { x: end.x - wdt * rng.f(0.5, 1.0), y: end.y + drop * rng.f(0.8, 1.0) },
+        { x: end.x + wdt * lock.f(0.2, 0.7), y: end.y + drop },
+        { x: end.x - wdt * lock.f(0.5, 1.0), y: end.y + drop * lock.f(0.8, 1.0) },
       ], color, 1, 1.4 * k);
     }
   }
@@ -1962,24 +2283,25 @@
     const budget = Math.round((opt.strays ?? 6) * 0.6);
     if (budget <= 0 || !h.top.length) return;
     const k = h._s / 100;
-    const tufts = rng.i(1, 3);
+    const lock = lockRng(rng, "stray");
+    const tufts = lock.i(1, 3);
     for (let t = 0; t < tufts; t++) {
-      const at = rng.i(0, h.top.length - 1);
-      const spread = rng.i(1, 4);
+      const at = lock.i(0, h.top.length - 1);
+      const spread = lock.i(1, 4);
       const count = Math.max(1, Math.round(budget / tufts));
       for (let i = 0; i < count; i++) {
-        const q = h.top[Math.max(0, Math.min(h.top.length - 1, at + rng.i(-spread, spread)))];
+        const q = h.top[Math.max(0, Math.min(h.top.length - 1, at + lock.i(-spread, spread)))];
         if (!q) continue;
         const ox = q.x - h._cx;
         const oy = q.y - h._cy;
         const len = Math.hypot(ox, oy) || 1;
-        const g = (rng.chance(0.35) ? rng.f(9, 22) : rng.f(2, 8)) * (opt.strayLen ?? 1) * k;
-        const curl = rng.f(-0.5, 0.5);
+        const g = (lock.chance(0.35) ? lock.f(9, 22) : lock.f(2, 8)) * (opt.strayLen ?? 1) * k;
+        const curl = lock.f(-0.5, 0.5);
         inkPoly(c, rng, [
           q,
           { x: q.x + (ox / len) * g * 0.55 - (oy / len) * g * curl * 0.3, y: q.y + (oy / len) * g * 0.55 + (ox / len) * g * curl * 0.3 },
           { x: q.x + (ox / len) * g - (oy / len) * g * curl, y: q.y + (oy / len) * g + (ox / len) * g * curl },
-        ], { w: rng.f(0.6, 1.8) * k, dry: 0.8 });
+        ], { w: lock.f(0.6, 1.8) * k, dry: 0.8 });
       }
     }
   }
@@ -1991,6 +2313,7 @@
     if (!h) return;
     const { front, top } = h;
     const k = h._s / 100;
+    const lock = lockRng(rng, "comb");
     // A solid cap hides the cranium under its own fill. Hair laid as strokes
     // has no fill, so the closed skull loop shows straight through it and the
     // strokes read as a fringe hung on a bald egg. Take the head line out
@@ -2002,22 +2325,24 @@
     const lines = opt.lines ?? 30;
     const bow = opt.bow ?? 0.2;
     // one parting, and everything sweeps away from it
-    const part = rng.f(0.2, 0.8);
-    const sweep = rng.f(-0.35, 0.35);
+    const part = lock.f(0.2, 0.8);
+    const sweep = lock.f(-0.35, 0.35);
     for (let i = 0; i < lines; i++) {
       // clump: strokes gather and leave gaps instead of marching evenly
       const base = i / (lines - 1 || 1);
-      const t = Math.max(0, Math.min(1, base + (fbm2(base * 6.4 + rng.seed * 0.01, 2.7, rng.seed + 5) - 0.5) * 0.18 + rng.f(-0.02, 0.02)));
+      const t = Math.max(0, Math.min(1, base + (fbm2(base * 6.4 + lock.seed * 0.01, 2.7, lock.seed + 5) - 0.5) * 0.18 + lock.f(-0.02, 0.02)));
       const f = front[Math.min(front.length - 1, Math.round(t * (front.length - 1)))];
       const g = top[Math.min(top.length - 1, Math.round((1 - t) * (top.length - 1)))];
+      const swingK = lock.f(0.5, 1.3);
+      const stop = lock.f(0.55, 1.05); // tips end at different depths
+      const out = lock.f(-1, 3.5) * k;
+      const ww = lock.f(1.9, 4.0) * k;
+      const taper = lock.f(0.08, 0.3);
       if (!f || !g) continue;
       const dx = f.x - g.x;
       const dy = f.y - g.y;
       const d = Math.hypot(dx, dy) || 1;
-      const swing = (bow + sweep * (t - part)) * d * rng.f(0.5, 1.3);
-      const stop = rng.f(0.55, 1.05); // tips end at different depths
-      // start a little past the outer edge so the strokes break the silhouette
-      const out = rng.f(-1, 3.5) * k;
+      const swing = (bow + sweep * (t - part)) * d * swingK;
       const ox = g.x - h._cx;
       const oy = g.y - h._cy;
       const ol = Math.hypot(ox, oy) || 1;
@@ -2031,31 +2356,34 @@
         });
       }
       // thick where it leaves the scalp, gone by the tip
-      inkPoly(c, rng, path, { w: rng.f(1.9, 4.0) * k, taper: rng.f(0.08, 0.3), dry: 0.5, overshoot: false });
+      inkPoly(c, rng, path, { w: ww, taper, dry: 0.5, overshoot: false });
     }
     // Even stroke-laid hair needs a hairline. Without one the strokes read as
     // a fringe radiating off the top contour rather than hair growing out of a
     // scalp — and the hairline is what tells you the shape of the head.
     if (opt.hairline !== false && front.length > 3) {
-      const a = rng.i(0, Math.max(0, front.length - 4));
-      const b = Math.min(front.length - 1, a + Math.round(front.length * rng.f(0.35, 0.8)));
+      const a = lock.i(0, Math.max(0, front.length - 4));
+      const b = Math.min(front.length - 1, a + Math.round(front.length * lock.f(0.35, 0.8)));
       const run = front.slice(a, b + 1);
-      if (run.length > 2) inkPoly(c, rng, run, { w: rng.f(1.2, 2.1) * k, dry: 1.2 });
+      if (run.length > 2) inkPoly(c, rng, run, { w: lock.f(1.2, 2.1) * k, dry: 1.2 });
     }
   }
 
   function shortTicks(c, rng, skull, lineY, count, len) {
+    const lock = lockRng(rng, "ticks");
     for (let i = 0; i < count; i++) {
-      const u = rng.f(-1.2, 1.2);
-      const y = lineY + rng.f(-0.18, 0.06);
+      const u = lock.f(-1.2, 1.2);
+      const y = lineY + lock.f(-0.18, 0.06);
+      const drop = lock.f(0.08, len);
+      const w = skull.s * lock.f(0.0085, 0.0135);
       const p = pin(skull, sphere(u, Math.asin(clamp(y, -0.95, 0.2))));
       if (p.z < -0.35) continue;
       const tip = pin(skull, {
         x: Math.sin(u) * 0.55,
-        y: y - rng.f(0.08, len),
+        y: y - drop,
         z: Math.cos(u) * 0.45,
       });
-      inkLine(c, rng, p.x, p.y, tip.x, tip.y, skull.s * rng.f(0.0085, 0.0135));
+      inkLine(c, rng, p.x, p.y, tip.x, tip.y, w);
     }
   }
 
@@ -2084,13 +2412,13 @@
   // lock hanging over the brow belongs in FRONT, and was being overpainted by
   // the eyes and brows that came after it. Those go into `defer` and are
   // flushed once the face is done.
-  function drawHair(c, rng, skull, hull, style, color, defer, tone) {
+  function drawHair(c, rng, skull, hull, style, color, defer, tone, lock = {}) {
     const front = defer || [];
     let lastMass = null;
     const s = skull.s;
-    const shape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
+    const shape = lock.shape || rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
     const mk = (opt) => {
-      const h = hairMass(skull, hull, rng, Object.assign({ shape }, opt));
+      const h = hairMass(skull, hull, rng, Object.assign({ shape, outer: lock.outer }, opt));
       if (h) {
         h._cx = skull.cx;
         h._cy = skull.cy;
@@ -2326,135 +2654,153 @@
       const eb = Math.sin(a) * ry * k;
       pts.push(p.ax !== undefined ? onSurface(p, ea, eb) : { x: p.x + ea, y: p.y + eb });
     }
+    // Paper first, always: the head hoop is already down, and an unfilled
+    // almond lets it show through the eye.
+    const wipe = pts.map((q) => ({
+      x: p.x + (q.x - p.x) * 1.22,
+      y: p.y + (q.y - p.y) * 1.22,
+    }));
+    inkFill(c, rng, wipe, PAPER, 1, 0.25);
+    inkFill(c, rng, pts, PAPER, 1, Math.max(0.3, ry * 0.1));
     if (fill) inkFill(c, rng, pts, INK, 1, Math.max(0.5, ry * 0.16));
     inkPoly(c, rng, pts, { closed: true, w: Math.max(0.8, ry * 0.2) });
   }
 
   function drawEyes(c, rng, skull, type) {
+    const lock = lockRng(rng, "eyes");
+    const inkL = lockRng(rng, "eyeInkL");
+    const inkR = lockRng(rng, "eyeInkR");
     const s = skull.s;
     const fy = skull.faceY || 0;
     const gap = skull.eyeGap ?? 0.36;
     // a pair of eyes is never a pair: different sizes, different heights
-    const kL = rng.f(0.62, 1.3);
-    const kR = rng.f(0.62, 1.3) * (rng.chance(0.28) ? 1.2 : 1);
-    const L = landmark(skull, { x: -gap, y: -0.12 + fy + rng.f(-0.05, 0.03), z: 0.88 });
-    const R = landmark(skull, { x: gap, y: -0.12 + fy + rng.f(-0.03, 0.05), z: 0.88 });
+    const kL = lock.f(0.62, 1.3);
+    const kR = lock.f(0.62, 1.3) * (lock.chance(0.28) ? 1.2 : 1);
+    const L = landmark(skull, { x: -gap, y: -0.12 + fy + lock.f(-0.05, 0.03), z: 0.88 });
+    const R = landmark(skull, { x: gap, y: -0.12 + fy + lock.f(-0.03, 0.05), z: 0.88 });
     // one rule, everywhere: is this bit of surface facing the viewer
     const showL = L.nz > 0.06;
     const showR = R.nz > 0.06;
-    const rx0 = s * rng.f(0.15, 0.21);
-    const ry0 = s * rng.f(0.085, 0.13);
-    const rx = rx0;
-    const ry = ry0;
+    const rx = s * lock.f(0.15, 0.21);
+    const ry = s * lock.f(0.085, 0.13);
     const gz = skull.gaze ?? 0;
+    const kinds = ["open", "open", "half", "half", "squint", "squint", "closed", "bare", "bare", "dot", "x", "slit", "angry"];
+    const k = type === "mix" ? lock.pick(kinds) : type === "wink" ? "open" : type;
+    const k2 = type === "wink" ? "slit" : lock.chance(0.3) ? lock.pick(kinds) : k;
+    const spec = () => ({
+      pupilY: lock.f(-0.06, 0.1),
+      lid: lock.chance(0.5),
+      lash: lock.chance(0.5),
+      closedA0: lock.f(0.15, 0.45),
+      closedA1: lock.f(-0.45, -0.15),
+      squintR: lock.f(0.022, 0.036),
+      halfArch: lock.f(-0.2, 0.2),
+      halfW: lock.f(0.022, 0.032),
+      bareR: lock.f(0.03, 0.055),
+      bareArc: lock.chance(0.6),
+    });
+    const specL = spec();
+    const specR = spec();
+    const mole = lock.chance(0.12);
 
-    const eye = (p, kind, k) => {
+    const eye = (p, kind, kk, sc, ink) => {
       const x = p.x;
       const y = p.y;
       const F = (a, b) => onSurface(p, a, b);
-      const sq = 1;
-      if (kind === "dot") inkCirc(c, rng, x, y, s * 0.062 * k, s * 0.018, true);
+      if (kind === "dot") inkCirc(c, ink, x, y, s * 0.062 * kk, s * 0.018, true);
       else if (kind === "open") {
-        almond(c, rng, p, rx * k, ry * k, false);
-        // the pupils go the same way — that is what makes it a gaze
-        const pu = F(gz * rx * k * 0.42, rng.f(-0.06, 0.1) * ry);
-        inkCirc(c, rng, pu.x, pu.y, s * 0.042 * k, s * 0.013, true);
-        if (rng.chance(0.5)) {
-          // a lid cutting the top of the iris
-          arcInFrame(c, rng, F, 0, -ry * k * 0.25, rx * k * 0.9, ry * k * 0.9, Math.PI + 0.35, -0.35, s * 0.016);
+        almond(c, ink, p, rx * kk, ry * kk, false);
+        const pu = F(gz * rx * kk * 0.42, sc.pupilY * ry);
+        inkCirc(c, ink, pu.x, pu.y, s * 0.042 * kk, s * 0.013, true);
+        if (sc.lid) {
+          arcInFrame(c, ink, F, 0, -ry * kk * 0.25, rx * kk * 0.9, ry * kk * 0.9, Math.PI + 0.35, -0.35, s * 0.016);
         }
       } else if (kind === "closed") {
-        // shut: one curve and a lash or two
-        arcInFrame(c, rng, F, 0, 0, rx * k * 0.9, ry * k * 1.1, Math.PI + rng.f(0.15, 0.45), rng.f(-0.45, -0.15), s * 0.019);
-        if (rng.chance(0.5)) { const q0 = F(-rx * k * 0.5, s * 0.02), q1 = F(-rx * k * 0.75, s * 0.05); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.012); }
+        arcInFrame(c, ink, F, 0, 0, rx * kk * 0.9, ry * kk * 1.1, Math.PI + sc.closedA0, sc.closedA1, s * 0.019);
+        if (sc.lash) { const q0 = F(-rx * kk * 0.5, s * 0.02), q1 = F(-rx * kk * 0.75, s * 0.05); inkLine(c, ink, q0.x, q0.y, q1.x, q1.y, s * 0.012); }
       } else if (kind === "squint") {
-        // pinched between two lids, no ring at all
-        arcInFrame(c, rng, F, 0, ry * k * 0.5, rx * k, ry * k, Math.PI + 0.4, -0.4, s * 0.02);
-        arcInFrame(c, rng, F, 0, -ry * k * 0.5, rx * k, ry * k, 0.45, Math.PI - 0.45, s * 0.017);
-        const pq = F(gz * rx * k * 0.3, 0);
-        inkCirc(c, rng, pq.x, pq.y, s * rng.f(0.022, 0.036) * k, s * 0.012, true);
+        arcInFrame(c, ink, F, 0, ry * kk * 0.5, rx * kk, ry * kk, Math.PI + 0.4, -0.4, s * 0.02);
+        arcInFrame(c, ink, F, 0, -ry * kk * 0.5, rx * kk, ry * kk, 0.45, Math.PI - 0.45, s * 0.017);
+        const pq = F(gz * rx * kk * 0.3, 0);
+        inkCirc(c, ink, pq.x, pq.y, s * sc.squintR * kk, s * 0.012, true);
       } else if (kind === "half") {
-        // a heavy lid cutting the top third off the eye
-        almond(c, rng, p, rx * k, ry * k, false);
-        const ph = F(gz * rx * k * 0.4, ry * k * 0.2);
-        inkCirc(c, rng, ph.x, ph.y, s * 0.04 * k, s * 0.013, true);
-        inkPoly(c, rng, [
-          F(-rx * k * 1.05, -ry * k * 0.5),
-          F(0, -ry * k * (0.95 + rng.f(-0.2, 0.2))),
-          F(rx * k * 1.05, -ry * k * 0.45),
-        ], { w: s * rng.f(0.022, 0.032), dry: 0.35 });
+        almond(c, ink, p, rx * kk, ry * kk, false);
+        const ph = F(gz * rx * kk * 0.4, ry * kk * 0.2);
+        inkCirc(c, ink, ph.x, ph.y, s * 0.04 * kk, s * 0.013, true);
+        inkPoly(c, ink, [
+          F(-rx * kk * 1.05, -ry * kk * 0.5),
+          F(0, -ry * kk * (0.95 + sc.halfArch)),
+          F(rx * kk * 1.05, -ry * kk * 0.45),
+        ], { w: s * sc.halfW, dry: 0.35 });
       } else if (kind === "bare") {
-        // no lid drawn at all: a pupil sitting on the face
-        inkCirc(c, rng, x, y, s * rng.f(0.03, 0.055) * k, s * 0.016, true);
-        if (rng.chance(0.6)) inkArc(c, rng, x, y - ry * k * 0.4, rx * k * 0.8 * sq, Math.PI + 0.5, -0.5, s * 0.016);
+        inkCirc(c, ink, x, y, s * sc.bareR * kk, s * 0.016, true);
+        if (sc.bareArc) inkArc(c, ink, x, y - ry * kk * 0.4, rx * kk * 0.8, Math.PI + 0.5, -0.5, s * 0.016);
       } else if (kind === "x") {
         const r = s * 0.1;
-        { const q0 = F(-r, -r), q1 = F(r, r); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.017); }
-        { const q0 = F(-r, r), q1 = F(r, -r); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.017); }
+        { const q0 = F(-r, -r), q1 = F(r, r); inkLine(c, ink, q0.x, q0.y, q1.x, q1.y, s * 0.017); }
+        { const q0 = F(-r, r), q1 = F(r, -r); inkLine(c, ink, q0.x, q0.y, q1.x, q1.y, s * 0.017); }
       } else if (kind === "slit") {
-        { const q0 = F(-s * 0.15, 0), q1 = F(s * 0.15, 0); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.018); }
+        { const q0 = F(-s * 0.15, 0), q1 = F(s * 0.15, 0); inkLine(c, ink, q0.x, q0.y, q1.x, q1.y, s * 0.018); }
       } else if (kind === "angry") {
-        { const q0 = F(-s * 0.16, -s * 0.09), q1 = F(s * 0.12, -s * 0.02); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.018); }
-        { const q0 = F(-s * 0.1, s * 0.05), q1 = F(s * 0.1, s * 0.05); inkLine(c, rng, q0.x, q0.y, q1.x, q1.y, s * 0.014); }
+        { const q0 = F(-s * 0.16, -s * 0.09), q1 = F(s * 0.12, -s * 0.02); inkLine(c, ink, q0.x, q0.y, q1.x, q1.y, s * 0.018); }
+        { const q0 = F(-s * 0.1, s * 0.05), q1 = F(s * 0.1, s * 0.05); inkLine(c, ink, q0.x, q0.y, q1.x, q1.y, s * 0.014); }
       }
     };
 
     if (type === "glasses") {
-      if (showL) inkCirc(c, rng, L.x, L.y, s * 0.2 * kL, s * 0.017);
-      if (showR) inkCirc(c, rng, R.x, R.y, s * 0.2 * kR, s * 0.017);
-      if (showL && showR) inkLine(c, rng, L.x + s * 0.2, L.y, R.x - s * 0.2, R.y, s * 0.014);
-      if (showL) inkLine(c, rng, L.x - s * 0.2, L.y, L.x - s * 0.34, L.y - s * 0.05, s * 0.013);
-      if (showR) inkLine(c, rng, R.x + s * 0.2, R.y, R.x + s * 0.34, R.y - s * 0.05, s * 0.013);
-      if (showL) inkCirc(c, rng, L.x, L.y, s * 0.048, s * 0.012, true);
-      if (showR) inkCirc(c, rng, R.x, R.y, s * 0.048, s * 0.012, true);
+      if (showL) inkCirc(c, inkL, L.x, L.y, s * 0.2 * kL, s * 0.017);
+      if (showR) inkCirc(c, inkR, R.x, R.y, s * 0.2 * kR, s * 0.017);
+      if (showL && showR) inkLine(c, inkL, L.x + s * 0.2, L.y, R.x - s * 0.2, R.y, s * 0.014);
+      if (showL) inkLine(c, inkL, L.x - s * 0.2, L.y, L.x - s * 0.34, L.y - s * 0.05, s * 0.013);
+      if (showR) inkLine(c, inkR, R.x + s * 0.2, R.y, R.x + s * 0.34, R.y - s * 0.05, s * 0.013);
+      if (showL) inkCirc(c, inkL, L.x, L.y, s * 0.048, s * 0.012, true);
+      if (showR) inkCirc(c, inkR, R.x, R.y, s * 0.048, s * 0.012, true);
       return;
     }
 
     if (type === "shades") {
-      if (showL) almond(c, rng, L, s * 0.17, s * 0.1, true);
-      if (showR) almond(c, rng, R, s * 0.17, s * 0.1, true);
-      if (showL && showR) inkLine(c, rng, L.x + s * 0.16, L.y, R.x - s * 0.16, R.y, s * 0.015);
+      if (showL) almond(c, inkL, L, s * 0.17, s * 0.1, true);
+      if (showR) almond(c, inkR, R, s * 0.17, s * 0.1, true);
+      if (showL && showR) inkLine(c, inkL, L.x + s * 0.16, L.y, R.x - s * 0.16, R.y, s * 0.015);
       return;
     }
 
     if (type === "patch") {
       const near = L.z >= R.z ? L : R;
       const far = L.z >= R.z ? R : L;
-      if (far.z > 0.02) eye(far, "open", 1);
+      const farInk = far === L ? inkL : inkR;
+      const nearInk = near === L ? inkL : inkR;
+      if (far.z > 0.02) eye(far, "open", 1, far === L ? specL : specR, farInk);
       if (near.z > -0.05) {
-        almond(c, rng, near, s * 0.18, s * 0.12, true);
+        almond(c, nearInk, near, s * 0.18, s * 0.12, true);
         const strap = pin(skull, { x: near === R ? 0.78 : -0.78, y: -0.24, z: 0.28 });
-        inkLine(c, rng, near.x, near.y, strap.x, strap.y, s * 0.016);
+        inkLine(c, nearInk, near.x, near.y, strap.x, strap.y, s * 0.016);
       }
       return;
     }
 
-    if (type === "wink") {
-      if (showL) eye(L, "open", kL);
-      if (showR) eye(R, "slit", kR);
-      return;
-    }
+    if (showL) eye(L, k, kL, specL, inkL);
+    if (showR) eye(R, k2, kR, specR, inkR);
 
-    const kinds = ["open", "open", "half", "half", "squint", "squint", "closed", "bare", "bare", "dot", "x", "slit", "angry"];
-    const k = type === "mix" ? rng.pick(kinds) : type;
-    // one eye is occasionally a different animal from the other
-    const k2 = rng.chance(0.3) ? rng.pick(kinds) : k;
-    if (showL) eye(L, k, kL);
-    if (showR) eye(R, k2, kR);
-
-    if (rng.chance(0.12)) {
+    if (mole) {
       const p = showL ? L : R;
-      inkCirc(c, rng, p.x + s * 0.02, p.y + s * 0.2, s * 0.014, s * 0.01, true);
-      inkCirc(c, rng, p.x + s * 0.01, p.y + s * 0.32, s * 0.012, s * 0.01, true);
+      const ink = showL ? inkL : inkR;
+      inkCirc(c, ink, p.x + s * 0.02, p.y + s * 0.2, s * 0.014, s * 0.01, true);
+      inkCirc(c, ink, p.x + s * 0.01, p.y + s * 0.32, s * 0.012, s * 0.01, true);
     }
   }
 
   function drawBrows(c, rng, skull, style) {
     if (style === "none") return;
+    const lock = lockRng(rng, "brows");
+    const inkL = lockRng(rng, "browInkL");
+    const inkR = lockRng(rng, "browInkR");
     const s = skull.s;
-    const hL = rng.f(-0.06, 0.02);
-    const hR = rng.f(-0.02, 0.07);
-    const brow = (side, h) => {
+    const hL = lock.f(-0.06, 0.02);
+    const hR = lock.f(-0.02, 0.07);
+    const wL = s * lock.f(0.028, 0.042);
+    const wR = s * lock.f(0.028, 0.042);
+    const brow = (side, h, w, ink) => {
       const p = landmark(skull, { x: (skull.eyeGap ?? 0.36) * side, y: -0.3 + (skull.faceY || 0) + h, z: 0.86 });
       if (p.nz < 0.06) return;
       const lift = style === "angry" ? s * 0.08 * side : style === "arch" ? -s * 0.06 : 0;
@@ -2464,10 +2810,10 @@
         const arch = style === "arch" ? -Math.sin(t * Math.PI) * s * 0.05 : 0;
         pts.push(onSurface(p, (t - 0.5) * s * 0.32, lift * (1 - t * 1.4) + arch));
       }
-      inkPoly(c, rng, pts, { w: s * rng.f(0.028, 0.042), dry: 0.4 });
+      inkPoly(c, ink, pts, { w, dry: 0.4 });
     };
-    brow(-1, hL);
-    brow(1, hR);
+    brow(-1, hL, wL, inkL);
+    brow(1, hR, wR, inkR);
   }
 
   // ---------- the nose ----------
@@ -2485,6 +2831,7 @@
   //     protrudes toward the near side and the nostril hooks BACK INTO the
   //     face. Getting that backwards is what made ours feel inside out.
   function drawNose(c, rng, skull, style, heavy) {
+    const lock = lockRng(rng, "nose");
     const s = skull.s;
     // The nose is never the darkest mark on the face. The head outline runs
     // s*0.03; this stays under it, and takes one pass, not two.
@@ -2514,7 +2861,7 @@
     ax /= faceLen;
     ay /= faceLen;
 
-    const tilt = rng.f(0.05, 0.2) * rng.sign();
+    const tilt = lock.f(0.05, 0.2) * lock.sign();
     const ct = Math.cos(tilt);
     const st = Math.sin(tilt);
     const tx = ax * ct - ay * st;
@@ -2523,25 +2870,30 @@
 
     // He starts the nose at the brow or just under it — never up the
     // forehead — and stops it well clear of the chin.
-    const head = faceLen * rng.f(0.0, 0.13);
+    const head = faceLen * lock.f(0.0, 0.13);
     const browP = { x: browRef.x + ax * head, y: browRef.y + ay * head };
     // 50-80% of brow-to-chin, two draws averaged so it piles up near 65%
-    let drop = faceLen * (rng.f(0.5, 0.8) + rng.f(0.56, 0.74)) * 0.5;
+    let drop = faceLen * (lock.f(0.5, 0.8) + lock.f(0.56, 0.74)) * 0.5;
     drop = Math.max(faceLen * 0.34, Math.min(drop, faceLen * 0.86 - head));
-    const proj = rng.f(0.35, 0.95);
+    const proj = lock.f(0.35, 0.95);
 
     const q0 = skull.project({ x: 0, y: -0.02 + fy, z: 0.72 });
     const q1 = skull.project({ x: 0, y: -0.02 + fy, z: 1.34 });
     const outX = q1.x - q0.x;
     const outY = q1.y - q0.y;
-    // the tip goes with the turn; the base hooks back into the face
-    const near = Math.abs(outX) > s * 0.02 ? Math.sign(outX) : rng.sign();
+    // lat is measured in the face's own left, not in screen-x. The long
+    // edge is the OUTSIDE of the turn — the contour the face is pointing
+    // at — so "near" is whichever lat points the same way the tip does.
+    const px0 = -ay;
+    const py0 = ax;
+    const latDot = outX * px0 + outY * py0;
+    const near = Math.abs(latDot) > s * 0.015 ? Math.sign(latDot) : lock.sign();
     const back = -near;
-    const off = rng.f(-0.035, 0.035) * s + near * s * rng.f(0.02, 0.12);
+    const off = lock.f(-0.035, 0.035) * s + near * s * lock.f(0.02, 0.12);
 
     const A = (t, lat) => {
-      const px = -ay;
-      const py = ax;
+      const px = px0;
+      const py = py0;
       const g = Math.max(0, Math.min(1, t / (drop || 1)));
       const pr = Math.pow(g, 1.7) * proj;
       return {
@@ -2554,140 +2906,158 @@
 
     let outer = null;
     let bottom = drop;
-    const nostril = (p, r) => inkCirc(c, rng, p.x, p.y, s * r, w * 0.45, rng.chance(0.45));
+    const nostril = (p, r) => inkCirc(c, rng, p.x, p.y, s * r, w * 0.45, lock.chance(0.45));
+    // A wash behind the head shows through a nose that is only a stroke.
+    // Plug the volume with paper first — same flesh as the rest of the potato —
+    // then the ink sits on top.
+    let plugged = false;
+    const plug = (run) => {
+      if (plugged || !run || run.length < 2) return;
+      const face = { x: browP.x * 0.4 + skull.cx * 0.6, y: browP.y * 0.75 + skull.cy * 0.25 };
+      inkFill(c, rng, [face].concat(run), PAPER, 1, 0.45);
+      refibre(c, rng, [face].concat(run));
+      plugged = true;
+    };
+    const paint = (run, opt) => {
+      plug(run);
+      inkPoly(c, rng, run, opt);
+    };
 
     // The move that makes a nose out of a stick: a hard corner at the tip and
     // a real run back into the face, a third to a half of the bridge length,
     // finished with an event. His base is never a token flick.
-    const baseRun = drop * rng.f(0.34, 0.58);
+    const baseRun = drop * lock.f(0.34, 0.58);
     const foot = (lead, run) => {
       const pts = [
-        A(drop + s * rng.f(0.0, 0.035), lead + back * run * 0.5),
-        A(drop + s * rng.f(-0.01, 0.02), lead + back * run),
+        A(drop + s * lock.f(0.0, 0.035), lead + back * run * 0.5),
+        A(drop + s * lock.f(-0.01, 0.02), lead + back * run),
       ];
-      const end = rng.f(0, 1);
+      const end = lock.f(0, 1);
       if (end < 0.45) {
-        pts.push(A(drop - s * rng.f(0.05, 0.11), lead + back * run * rng.f(0.85, 1.05))); // far wing flicks up
+        pts.push(A(drop - s * lock.f(0.05, 0.11), lead + back * run * lock.f(0.85, 1.05))); // far wing flicks up
       } else if (end < 0.75) {
-        pts.push(A(drop + s * rng.f(0.03, 0.07), lead + back * run * 0.72)); // or curls into a bulb
-        pts.push(A(drop - s * rng.f(0.0, 0.03), lead + back * run * 0.5));
+        pts.push(A(drop + s * lock.f(0.03, 0.07), lead + back * run * 0.72)); // or curls into a bulb
+        pts.push(A(drop - s * lock.f(0.0, 0.03), lead + back * run * 0.5));
       }
       return pts;
     };
 
     if (style === "wedge") {
       // narrow at the top, WIDE at the base — the base is most of the shape
-      const top = A(0, back * s * rng.f(0.0, 0.035));
-      const wideB = Math.max(baseRun, drop * rng.f(0.4, 0.62));
-      const leadRun = [top, A(drop * 0.55, near * wideB * rng.f(0.12, 0.3)), A(drop, near * wideB * rng.f(0.35, 0.5))];
-      leadRun.push(A(drop + s * rng.f(0.0, 0.04), near * wideB * 0.1));
-      leadRun.push(A(drop + s * rng.f(-0.01, 0.02), back * wideB * rng.f(0.45, 0.7)));
-      if (rng.chance(0.55)) leadRun.push(A(drop - s * rng.f(0.05, 0.1), back * wideB * rng.f(0.5, 0.7)));
-      inkPoly(c, rng, leadRun, { w, dry: 0.3, doubled: rng.chance(0.25) });
+      const top = A(0, back * s * lock.f(0.0, 0.035));
+      const wideB = Math.max(baseRun, drop * lock.f(0.4, 0.62));
+      const leadRun = [top, A(drop * 0.55, near * wideB * lock.f(0.12, 0.3)), A(drop, near * wideB * lock.f(0.35, 0.5))];
+      leadRun.push(A(drop + s * lock.f(0.0, 0.04), near * wideB * 0.1));
+      leadRun.push(A(drop + s * lock.f(-0.01, 0.02), back * wideB * lock.f(0.45, 0.7)));
+      if (lock.chance(0.55)) leadRun.push(A(drop - s * lock.f(0.05, 0.1), back * wideB * lock.f(0.5, 0.7)));
+      paint(leadRun, { w, dry: 0.3, doubled: lock.chance(0.25) });
       // the far edge exists only in the lower half, never as a mirrored leg
-      if (rng.chance(0.6)) {
-        inkPoly(c, rng, [A(drop * rng.f(0.3, 0.5), back * wideB * rng.f(0.1, 0.25)), A(drop * rng.f(0.88, 1.0), back * wideB * rng.f(0.4, 0.62))], {
-          w: w * rng.f(0.55, 0.8),
+      if (lock.chance(0.6)) {
+        inkPoly(c, rng, [A(drop * lock.f(0.3, 0.5), back * wideB * lock.f(0.1, 0.25)), A(drop * lock.f(0.88, 1.0), back * wideB * lock.f(0.4, 0.62))], {
+          w: w * lock.f(0.55, 0.8),
           dry: 0.65,
         });
       }
-      if (rng.chance(0.5)) nostril(A(drop - s * 0.02, back * wideB * 0.45), rng.f(0.015, 0.026));
+      if (lock.chance(0.5)) nostril(A(drop - s * 0.02, back * wideB * 0.45), lock.f(0.015, 0.026));
       outer = leadRun;
     } else if (style === "column") {
       // a squared U with unequal legs: a long near side, a base, and a far
       // side that only exists in the bottom third
-      const gap = s * rng.f(0.045, 0.085);
-      const run = [A(0, near * gap * 0.4), A(drop * 0.5, near * gap * rng.f(0.8, 1.15)), A(drop, near * gap)];
-      const runB = baseRun * rng.f(0.9, 1.2) + gap;
-      run.push(A(drop + s * rng.f(0.0, 0.03), near * gap + back * runB * 0.55));
-      run.push(A(drop + s * rng.f(-0.01, 0.02), near * gap + back * runB));
-      run.push(A(drop * rng.f(0.6, 0.78), near * gap + back * runB * rng.f(0.9, 1.05)));
-      inkPoly(c, rng, run, { w, dry: 0.3, doubled: rng.chance(0.2) });
-      if (rng.chance(0.5)) nostril(A(drop - s * 0.02, near * gap + back * runB * 0.75), rng.f(0.014, 0.026));
+      const gap = s * lock.f(0.045, 0.085);
+      const run = [A(0, near * gap * 0.4), A(drop * 0.5, near * gap * lock.f(0.8, 1.15)), A(drop, near * gap)];
+      const runB = baseRun * lock.f(0.9, 1.2) + gap;
+      run.push(A(drop + s * lock.f(0.0, 0.03), near * gap + back * runB * 0.55));
+      run.push(A(drop + s * lock.f(-0.01, 0.02), near * gap + back * runB));
+      run.push(A(drop * lock.f(0.6, 0.78), near * gap + back * runB * lock.f(0.9, 1.05)));
+      paint(run, { w, dry: 0.3, doubled: lock.chance(0.2) });
+      if (lock.chance(0.5)) nostril(A(drop - s * 0.02, near * gap + back * runB * 0.75), lock.f(0.014, 0.026));
       outer = run;
     } else if (style === "hook") {
-      const bend = rng.f(0.03, 0.09) * s * near;
+      const bend = lock.f(0.03, 0.09) * s * near;
       const run = [];
       for (let i = 0; i <= 7; i++) {
         const u = i / 7;
         run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.75)));
       }
       // the beak drops past the base line and curls back under itself
-      run.push(A(drop + s * rng.f(0.05, 0.1), bend + near * s * rng.f(0.0, 0.03)));
-      run.push(A(drop + s * rng.f(0.03, 0.08), bend + back * baseRun * 0.6));
-      run.push(A(drop - s * rng.f(0.0, 0.04), bend + back * baseRun * rng.f(0.9, 1.15)));
-      inkPoly(c, rng, run, { w, dry: 0.25, doubled: rng.chance(0.25) });
-      if (rng.chance(0.6)) nostril(run[run.length - 1], rng.f(0.015, 0.028));
+      run.push(A(drop + s * lock.f(0.05, 0.1), bend + near * s * lock.f(0.0, 0.03)));
+      run.push(A(drop + s * lock.f(0.03, 0.08), bend + back * baseRun * 0.6));
+      run.push(A(drop - s * lock.f(0.0, 0.04), bend + back * baseRun * lock.f(0.9, 1.15)));
+      paint(run, { w, dry: 0.25, doubled: lock.chance(0.25) });
+      if (lock.chance(0.6)) nostril(run[run.length - 1], lock.f(0.015, 0.028));
       bottom = drop + s * 0.1;
       outer = run;
     } else if (style === "snub") {
       // a tip that is drawn round, not a stick with a dot under it
-      const d2 = drop * rng.f(0.72, 0.88);
-      const r = Math.max(s * 0.085, d2 * rng.f(0.3, 0.42));
-      const run = [A(0, 0), A(d2 * 0.6, near * s * 0.02), A(d2, near * s * rng.f(0.02, 0.06))];
+      const d2 = drop * lock.f(0.72, 0.88);
+      const r = Math.max(s * 0.085, d2 * lock.f(0.3, 0.42));
+      const run = [A(0, 0), A(d2 * 0.6, near * s * 0.02), A(d2, near * s * lock.f(0.02, 0.06))];
       run.push(A(d2 + r * 0.55, near * s * 0.02));
       run.push(A(d2 + r * 0.62, back * r * 0.55));
-      run.push(A(d2 + r * 0.2, back * r * rng.f(0.85, 1.05)));
-      if (rng.chance(0.5)) run.push(A(d2 - r * 0.15, back * r * rng.f(0.8, 1.0)));
-      inkPoly(c, rng, run, { w: w * rng.f(0.85, 1.05), dry: 0.35, doubled: rng.chance(0.2) });
-      if (rng.chance(0.45)) nostril(A(d2 + r * 0.3, back * r * 0.45), rng.f(0.013, 0.022));
+      run.push(A(d2 + r * 0.2, back * r * lock.f(0.85, 1.05)));
+      if (lock.chance(0.5)) run.push(A(d2 - r * 0.15, back * r * lock.f(0.8, 1.0)));
+      paint(run, { w: w * lock.f(0.85, 1.05), dry: 0.35, doubled: lock.chance(0.2) });
+      if (lock.chance(0.45)) nostril(A(d2 + r * 0.3, back * r * 0.45), lock.f(0.013, 0.022));
       bottom = d2 + r * 0.7;
       outer = run;
     } else if (style === "nostrils") {
       // barely a nose: a hint of bridge and two unmatched marks
-      if (rng.chance(0.7)) inkPoly(c, rng, [A(drop * 0.35, 0), A(drop * 0.9, near * s * 0.02)], { w: w * 0.5, dry: 0.9 });
-      nostril(A(drop, near * s * rng.f(0.05, 0.1)), rng.f(0.022, 0.036));
-      if (rng.chance(0.7)) nostril(A(drop - s * rng.f(0.02, 0.06), back * s * rng.f(0.02, 0.05)), rng.f(0.012, 0.022));
+      if (lock.chance(0.7)) inkPoly(c, rng, [A(drop * 0.35, 0), A(drop * 0.9, near * s * 0.02)], { w: w * 0.5, dry: 0.9 });
+      nostril(A(drop, near * s * lock.f(0.05, 0.1)), lock.f(0.022, 0.036));
+      if (lock.chance(0.7)) nostril(A(drop - s * lock.f(0.02, 0.06), back * s * lock.f(0.02, 0.05)), lock.f(0.012, 0.022));
       // always a mark under them: two dots alone read as a pair of holes
-      inkPoly(c, rng, [A(drop + s * 0.015, near * s * 0.04), A(drop + s * rng.f(0.0, 0.03), back * baseRun * rng.f(0.4, 0.7))], { w: w * 0.6, dry: 0.75 });
+      inkPoly(c, rng, [A(drop + s * 0.015, near * s * 0.04), A(drop + s * lock.f(0.0, 0.03), back * baseRun * lock.f(0.4, 0.7))], { w: w * 0.6, dry: 0.75 });
       outer = null;
     } else if (style === "silhouette") {
       // Too frontal for the contour to carry it, so he draws the knuckle
       // head-on: a short bridge and a broad blunt base.
-      const d2 = drop * rng.f(0.62, 0.8);
-      const bend = rng.f(0.0, 0.04) * s * near;
-      const wideB = d2 * rng.f(0.45, 0.7);
-      const run = [A(0, bend * 0.3), A(d2 * 0.55, bend), A(d2, bend + near * s * rng.f(0.01, 0.04))];
-      run.push(A(d2 + s * rng.f(0.02, 0.055), bend + near * s * 0.01));
-      run.push(A(d2 + s * rng.f(0.01, 0.04), bend + back * wideB * 0.6));
-      run.push(A(d2 - s * rng.f(0.0, 0.05), bend + back * wideB * rng.f(0.9, 1.1)));
-      inkPoly(c, rng, run, { w, dry: 0.3, doubled: rng.chance(0.3) });
-      if (rng.chance(0.55)) nostril(A(d2 + s * 0.01, bend + back * wideB * 0.55), rng.f(0.016, 0.03));
+      const d2 = drop * lock.f(0.62, 0.8);
+      const bend = lock.f(0.0, 0.04) * s * near;
+      const wideB = d2 * lock.f(0.45, 0.7);
+      const run = [A(0, bend * 0.3), A(d2 * 0.55, bend), A(d2, bend + near * s * lock.f(0.01, 0.04))];
+      run.push(A(d2 + s * lock.f(0.02, 0.055), bend + near * s * 0.01));
+      run.push(A(d2 + s * lock.f(0.01, 0.04), bend + back * wideB * 0.6));
+      run.push(A(d2 - s * lock.f(0.0, 0.05), bend + back * wideB * lock.f(0.9, 1.1)));
+      paint(run, { w, dry: 0.3, doubled: lock.chance(0.3) });
+      if (lock.chance(0.55)) nostril(A(d2 + s * 0.01, bend + back * wideB * 0.55), lock.f(0.016, 0.03));
       bottom = d2 + s * 0.06;
       outer = run;
     } else {
       // the plain one, and still one stroke: down, hard corner, back into the
       // face, out. A bare vertical with a token foot is the thing that reads
       // as a crack in the paper rather than a nose.
-      const bend = rng.f(0.01, 0.055) * s * near;
+      const bend = lock.f(0.01, 0.055) * s * near;
       const run = [];
       for (let i = 0; i <= 7; i++) {
         const u = i / 7;
         run.push(A(drop * u, bend * Math.sin(u * Math.PI * 0.85)));
       }
       for (const p of foot(bend, baseRun)) run.push(p);
-      inkPoly(c, rng, run, { w, dry: 0.28, doubled: rng.chance(0.22) });
-      if (rng.chance(0.45)) nostril(A(drop - s * 0.01, bend + back * baseRun * rng.f(0.55, 0.9)), rng.f(0.015, 0.028));
+      paint(run, { w, dry: 0.28, doubled: lock.chance(0.22) });
+      if (lock.chance(0.45)) nostril(A(drop - s * 0.01, bend + back * baseRun * lock.f(0.55, 0.9)), lock.f(0.015, 0.028));
       // the near wing: a short tick, never a mirror of the base
-      if (rng.chance(0.3)) {
-        inkPoly(c, rng, [A(drop - s * rng.f(0.04, 0.09), bend + near * s * rng.f(0.02, 0.05)), A(drop + s * 0.01, bend)], { w: w * 0.6, dry: 0.8 });
+      if (lock.chance(0.3)) {
+        inkPoly(c, rng, [A(drop - s * lock.f(0.04, 0.09), bend + near * s * lock.f(0.02, 0.05)), A(drop + s * 0.01, bend)], { w: w * 0.6, dry: 0.8 });
       }
       outer = run;
     }
 
-    return { ax, ay, browP, base: bottom + s * 0.05, outer };
+    return { ax, ay, browP, base: bottom + s * 0.05, outer, bump: null };
   }
 
   function drawMouth(c, rng, skull, style, nose) {
+    const lock = lockRng(rng, "mouth");
     const s = skull.s;
     const fy = (skull.faceY || 0) * 0.5;
     // The mouth gets a real surface frame, then keeps it while its POSITION
     // is moved to sit under whatever nose this face got. Before, it was a
     // set of screen-horizontal arcs that stayed level on a rolled head.
-    const ML = landmark(skull, { x: rng.f(-0.06, 0.06) + Math.sin(skull.yaw) * 0.08, y: rng.f(0.54, 0.68) + fy, z: 0.78 });
+    const ML = landmark(skull, { x: lock.f(-0.06, 0.06), y: lock.f(0.54, 0.68) + fy, z: 0.78 });
     if (nose) {
-      const gap = s * rng.f(0.16, 0.42);
-      const off = s * rng.f(-0.09, 0.09);
+      // Sit clearly under the nose, not on it — coverNose used to swallow
+      // a mouth that shared the nose's base and leave a vertical stroke.
+      const gap = s * lock.f(0.28, 0.52);
+      const off = s * lock.f(-0.06, 0.06);
       const q = skull.limit(
         skull.deform({
           x: nose.browP.x + nose.ax * (nose.base + gap) - nose.ay * off,
@@ -2697,70 +3067,98 @@
       );
       ML.x = q.x;
       ML.y = q.y;
+      // Width runs across the face (perp. to the nose), never along it.
+      // Using the skull's u-axis here is what turned profile mouths into
+      // vertical lines when that axis lined up with the nose.
+      const dx = nose.ax;
+      const dy = nose.ay;
+      const dl = Math.hypot(dx, dy) || 1;
+      ML.bx = dx / dl;
+      ML.by = dy / dl;
+      ML.ax = -ML.by;
+      ML.ay = ML.bx;
+      ML.ra = 1;
+      ML.rb = 1;
     }
+    const w = s * lock.f(0.03, 0.048);
+    // In profile the mouth is a short lip, not a full-width smile flung
+    // into depth. Foreshorten by how much the face still faces us.
+    const faceOn = Math.max(0.28, Math.min(1, Math.abs(ML.nz) * 1.05 + 0.12));
+    const wide = s * lock.f(0.16, 0.28) * faceOn;
+    const openH = [];
+    for (let i = 0; i <= 12; i++) openH.push(lock.f(0.1, 0.15));
+    const hasTeeth = lock.chance(0.55);
+    const toothN = lock.i(2, 4);
+    const toothH = [];
+    for (let i = 0; i < 6; i++) toothH.push(lock.f(0.02, 0.05));
+    const fillOpen = lock.chance(0.5);
+    const teethN = lock.i(3, 6);
+    const lineA = lock.f(-2, 2);
+    const lineB = lock.f(0.0, 0.05);
+    const lineC = lock.f(-2, 3);
+    const teethH = lock.f(0.1, 0.16);
+    const puckerR = lock.f(0.05, 0.085);
+    const plain = [lock.f(0.7, 1.0), lock.f(-1, 2), lock.f(-0.03, 0.05), lock.f(-2, 2), lock.f(0.6, 1.0), lock.f(-3, 2)];
+    const corner = lock.chance(0.3);
+    const cornerSide = lock.sign();
+    const cornerA = lock.f(0.11, 0.19);
+    const cornerY0 = lock.f(-2, 1);
+    const cornerY1 = lock.f(0.03, 0.08);
     if (ML.nz < -0.1) return;
     const F = (a, b) => onSurface(ML, a, b);
     const x = ML.x;
     const y = ML.y;
-    const w = s * rng.f(0.03, 0.048);
-    const wide = s * rng.f(0.16, 0.28);
     if (style === "smile") {
       arcInFrame(c, rng, F, 0, -s * 0.05, wide, wide * 0.8, 0.3, Math.PI - 0.3, w);
     } else if (style === "frown") {
       arcInFrame(c, rng, F, 0, s * 0.2, wide * 0.9, wide * 0.75, Math.PI + 0.3, -0.3, w);
     } else if (style === "open") {
-      // an open jaw with something inside it
       const pts = [];
       for (let i = 0; i <= 12; i++) {
         const a = (i / 12) * Math.PI * 2;
-        pts.push(F(Math.cos(a) * wide * 0.62, Math.sin(a) * s * rng.f(0.1, 0.15)));
+        pts.push(F(Math.cos(a) * wide * 0.62, Math.sin(a) * s * openH[i]));
       }
       inkPoly(c, rng, pts, { closed: true, w, dry: 0.4 });
-      if (rng.chance(0.55)) {
-        const n = rng.i(2, 4);
-        for (let i = 1; i < n; i++) {
-          const tx = x - wide * 0.5 + (i / n) * wide;
-          const t0 = F(tx - x, -s * 0.09), t1 = F(tx - x, -s * rng.f(0.02, 0.05));
+      if (hasTeeth) {
+        for (let i = 1; i < toothN; i++) {
+          const tx = x - wide * 0.5 + (i / toothN) * wide;
+          const t0 = F(tx - x, -s * 0.09), t1 = F(tx - x, -s * toothH[i]);
           inkLine(c, rng, t0.x, t0.y, t1.x, t1.y, w * 0.6);
         }
-      } else if (rng.chance(0.5)) {
+      } else if (fillOpen) {
         inkMassFill(c, rng, pts, INK, { bite: s * 0.02 });
       }
     } else if (style === "teeth") {
-      // a row of teeth showing under a lip
-      inkPoly(c, rng, [F(-wide, rng.f(-2, 2)), F(0, -s * rng.f(0.0, 0.05)), F(wide, rng.f(-2, 3))], { w, dry: 0.4 });
-      const n = rng.i(3, 6);
-      for (let i = 1; i < n; i++) {
-        const tx = x - wide * 0.8 + (i / n) * wide * 1.6;
-        const u0 = F(tx - x, s * 0.01), u1 = F(tx - x + rng.f(-1, 1), s * rng.f(0.06, 0.11));
+      inkPoly(c, rng, [F(-wide, lineA), F(0, -s * lineB), F(wide, lineC)], { w, dry: 0.4 });
+      for (let i = 1; i < teethN; i++) {
+        const tx = x - wide * 0.8 + (i / teethN) * wide * 1.6;
+        const u0 = F(tx - x, s * 0.01), u1 = F(tx - x + (toothH[i] - 0.035) * 40, s * (0.06 + toothH[i]));
         inkLine(c, rng, u0.x, u0.y, u1.x, u1.y, w * 0.55);
       }
-      inkPoly(c, rng, [F(-wide * 0.85, s * 0.02), F(0, s * rng.f(0.1, 0.16)), F(wide * 0.85, s * 0.03)], { w: w * 0.8, dry: 0.5 });
+      inkPoly(c, rng, [F(-wide * 0.85, s * 0.02), F(0, s * teethH), F(wide * 0.85, s * 0.03)], { w: w * 0.8, dry: 0.5 });
     } else if (style === "smirk") {
       inkPoly(c, rng, [F(-wide * 0.85, s * 0.05), F(s * 0.04, -s * 0.01), F(wide * 0.9, -s * 0.09)], { w, dry: 0.4 });
     } else if (style === "lips") {
-      // an overhanging upper lip
       inkPoly(c, rng, [F(-wide * 0.9, 0), F(-wide * 0.28, -s * 0.045), F(wide * 0.2, -s * 0.03), F(wide * 0.9, s * 0.01)], { w: w * 1.25, dry: 0.35 });
       arcInFrame(c, rng, F, 0, s * 0.01, wide * 0.8, wide * 0.6, 0.3, Math.PI - 0.3, w * 0.75);
     } else if (style === "pucker") {
-      inkCirc(c, rng, x, y, s * rng.f(0.05, 0.085), w, false);
+      inkCirc(c, rng, x, y, s * puckerR, w, false);
       { const a0 = F(-s * 0.14, -s * 0.02), a1 = F(-s * 0.06, 0); inkLine(c, rng, a0.x, a0.y, a1.x, a1.y, w * 0.6); }
       { const b0 = F(s * 0.06, 0), b1 = F(s * 0.14, -s * 0.03); inkLine(c, rng, b0.x, b0.y, b1.x, b1.y, w * 0.6); }
     } else {
-      inkPoly(c, rng, [F(-wide * rng.f(0.7, 1.0), rng.f(-1, 2)), F(s * rng.f(-0.03, 0.05), rng.f(-2, 2)), F(wide * rng.f(0.6, 1.0), rng.f(-3, 2))], { w, dry: 0.4 });
+      inkPoly(c, rng, [F(-wide * plain[0], plain[1]), F(s * plain[2], plain[3]), F(wide * plain[4], plain[5])], { w, dry: 0.4 });
     }
-    // corner marks — a mouth ends somewhere, it does not just stop
-    if (rng.chance(0.3)) {
-      const side = rng.sign();
-      const ca = side * s * rng.f(0.11, 0.19);
-      const c0 = onSurface(ML, ca, rng.f(-2, 1));
-      const c1 = onSurface(ML, ca + side * s * 0.04, s * rng.f(0.03, 0.08));
+    if (corner) {
+      const ca = cornerSide * s * cornerA;
+      const c0 = onSurface(ML, ca, cornerY0);
+      const c1 = onSurface(ML, ca + cornerSide * s * 0.04, s * cornerY1);
       inkLine(c, rng, c0.x, c0.y, c1.x, c1.y, w * 0.7);
     }
   }
 
   function drawFacialHair(c, rng, skull, style) {
     if (style === "none") return;
+    const lock = lockRng(rng, "beard");
     const s = skull.s;
     if (style === "stache") {
       const L = pin(skull, { x: -0.28, y: 0.46, z: 0.88 });
@@ -2769,7 +3167,10 @@
         const t = i / 7;
         const x = L.x + (R.x - L.x) * t;
         const y = L.y + (R.y - L.y) * t + Math.sin(t * Math.PI) * s * 0.035;
-        inkLine(c, rng, x - s * 0.02, y, x + rng.f(s * 0.03, s * 0.09), y + rng.f(-2, 3), s * rng.f(0.015, 0.023));
+        const dx = lock.f(s * 0.03, s * 0.09);
+        const dy = lock.f(-2, 3);
+        const ww = s * lock.f(0.015, 0.023);
+        inkLine(c, rng, x - s * 0.02, y, x + dx, y + dy, ww);
       }
     } else if (style === "goatee") {
       const a = pin(skull, { x: -0.13, y: 0.66, z: 0.74 });
@@ -2792,8 +3193,12 @@
       }
     } else if (style === "stubble") {
       for (let i = 0; i < 34; i++) {
-        const p = pin(skull, { x: rng.f(-0.48, 0.48), y: rng.f(0.4, 0.9), z: 0.58 });
-        if (p.z > 0) inkLine(c, rng, p.x, p.y, p.x + rng.f(-1.6, 1.6), p.y + rng.f(1, 3.5), s * 0.009);
+        const px = lock.f(-0.48, 0.48);
+        const py = lock.f(0.4, 0.9);
+        const dx = lock.f(-1.6, 1.6);
+        const dy = lock.f(1, 3.5);
+        const p = pin(skull, { x: px, y: py, z: 0.58 });
+        if (p.z > 0) inkLine(c, rng, p.x, p.y, p.x + dx, p.y + dy, s * 0.009);
       }
     }
   }
@@ -2920,7 +3325,7 @@
   }
 
   function drawBody(c, rng, cx, neckY, s, lean, clothes, person) {
-    const lx = lean * s * 0.26;
+    const lx = (lean + MOTION.lean) * s * 0.26;
     const B = bodyKind(rng, person);
     const shW = s * B.shW;
     const hipW = s * B.hipW;
@@ -2944,23 +3349,46 @@
     const tilt = rng.f(-0.1, 0.1);
     const ct = Math.cos(tilt);
     const st = Math.sin(tilt);
+    // A body in motion does not travel as one block. The torso rises and
+    // sways while the feet stay where they were put — so the displacement is
+    // full strength from the hips up and fades to nothing at the floor, which
+    // is what makes the knees take the bob instead of the shoes sliding about.
+    // A jump is the exception: there the ground lets go, and MOTION.ground
+    // carries the feet up with everything else.
+    const groundK = 1 - (MOTION.ground ?? 1);
+    const planted = (y) => {
+      if (!MOTION.on) return 0;
+      const k = Math.max(0, Math.min(1, (y - hipY) / Math.max(1e-6, footY - hipY)));
+      return 1 - k * (1 - groundK);
+    };
     const P = (x, y) => {
       const dy = y - neckY;
       const dx = x + (lx * dy) / (s * 2);
-      return { x: cx + dx * ct - dy * st, y: neckY + dx * st + dy * ct };
+      const g = planted(y);
+      return {
+        x: cx + dx * ct - dy * st + MOTION.sway * s * g,
+        y: neckY + dx * st + dy * ct + MOTION.bob * s * g,
+      };
     };
+
+    // Move a joint the rig already worked out. Offsets are added, never
+    // substituted, so the swing his arms happen to hang at is still his.
+    const J = (p, dx, dy) => (MOTION.on ? { x: p.x + dx * s, y: p.y + dy * s } : p);
 
     // ---- skeleton lines the outline is grown around ----
     const arm = (side) => {
-      const sh = P(side * shW * 0.82, shY + s * shrug * side);
+      const m = MOTION.arm[side < 0 ? 0 : 1];
+      const sh = P(side * shW * 0.82, shY + s * (shrug * side + MOTION.sh));
+      const E = (p) => J(p, m.ex, m.ey);
+      const H = (p) => J(p, m.hx, m.hy);
       if (pose === "pockets") {
-        return [sh, P(side * (shW + s * 0.16), shY + s * 0.78), P(side * (hipW + s * 0.1), hipY - s * 0.16)];
+        return [sh, E(P(side * (shW + s * 0.16), shY + s * 0.78)), H(P(side * (hipW + s * 0.1), hipY - s * 0.16))];
       }
       if (pose === "hips") {
-        return [sh, P(side * (shW + s * 0.42), shY + s * 0.74), P(side * (hipW + s * 0.06), hipY - s * 0.08)];
+        return [sh, E(P(side * (shW + s * 0.42), shY + s * 0.74)), H(P(side * (hipW + s * 0.06), hipY - s * 0.08))];
       }
       if (pose === "folded") {
-        return [sh, P(side * (shW + s * 0.14), shY + s * 0.62), P(-side * s * 0.16, shY + s * 0.95)];
+        return [sh, E(P(side * (shW + s * 0.14), shY + s * 0.62)), H(P(-side * s * 0.16, shY + s * 0.95))];
       }
       // hanging
       // the hang is not vertical on everyone: some swing out, some tuck in
@@ -2968,8 +3396,8 @@
       const swing = rng.f(-0.16, 0.24);
       return [
         sh,
-        P(side * (shW + s * (rng.f(0.02, 0.13) + swing * 0.4)) * a, shY + s * rng.f(0.66, 0.96) * a),
-        P(side * (shW + s * (rng.f(-0.02, 0.2) + swing)) * a, shY + s * rng.f(1.42, 1.86) * a),
+        E(P(side * (shW + s * (rng.f(0.02, 0.13) + swing * 0.4)) * a, shY + s * rng.f(0.66, 0.96) * a)),
+        H(P(side * (shW + s * (rng.f(-0.02, 0.2) + swing)) * a, shY + s * rng.f(1.42, 1.86) * a)),
       ];
     };
 
@@ -2978,10 +3406,11 @@
     const spread = rng.f(0.78, 1.35);
     const leg = (side) => {
       const drop = footY + s * rng.f(-0.09, 0.09);
+      const m = MOTION.leg[side < 0 ? 0 : 1];
       return [
         P(side * hipW * rng.f(0.48, 0.62) * asym(side), hipY - s * 0.05),
-        P(side * (hipW * 0.5 * spread + s * (stance + rng.f(-0.08, 0.08))), kneeY + s * rng.f(-0.1, 0.1)),
-        P(side * (hipW * 0.46 * spread + s * (-stance * 1.6 + rng.f(-0.12, 0.12))), drop),
+        J(P(side * (hipW * 0.5 * spread + s * (stance + rng.f(-0.08, 0.08))), kneeY + s * rng.f(-0.1, 0.1)), m.kx, m.ky),
+        J(P(side * (hipW * 0.46 * spread + s * (-stance * 1.6 + rng.f(-0.12, 0.12))), drop), m.fx, m.fy),
       ];
     };
 
@@ -2989,6 +3418,20 @@
     const Ra = arm(1);
     const Ll = leg(-1);
     const Rl = leg(1);
+    // A jump (or a knock-kneed stance plus motion) can send the knees
+    // through each other. The core outline is one polygon, so crossing
+    // legs fold it into a bowtie and the clothing clip dies.
+    {
+      const minGap = s * Math.max(0.22, lw0 * 1.2);
+      for (let i = 0; i < 3; i++) {
+        const gap = Rl[i].x - Ll[i].x;
+        if (gap < minGap) {
+          const mid = (Ll[i].x + Rl[i].x) / 2;
+          Ll[i] = { x: mid - minGap / 2, y: Ll[i].y };
+          Rl[i] = { x: mid + minGap / 2, y: Rl[i].y };
+        }
+      }
+    }
 
     const smooth = (pts, n) => {
       const out = [pts[0]];
@@ -3008,8 +3451,8 @@
     // ---- one continuous silhouette ----
     const neckL = P(-s * rng.f(0.15, 0.21), neckY - s * 0.42);
     const neckR = P(s * rng.f(0.15, 0.21), neckY - s * 0.42);
-    const shoulderL = P(-shW * asymL, shY + s * (slope - shrug));
-    const shoulderR = P(shW * asymR, shY + s * (slope + shrug) + s * rng.f(-0.06, 0.06));
+    const shoulderL = P(-shW * asymL, shY + s * (slope - shrug + MOTION.sh));
+    const shoulderR = P(shW * asymR, shY + s * (slope + shrug + MOTION.sh) + s * rng.f(-0.06, 0.06));
     // a belly, or a pinch, or neither — and it is not at the same height twice
     const waistY = shY + (hipY - shY) * rng.f(0.42, 0.68);
     const midW = (shW + hipW) * 0.5 * B.waist;
@@ -3017,7 +3460,10 @@
     const waistR = P(midW * rng.f(0.94, 1.06), waistY + s * rng.f(-0.06, 0.06));
     const hipL = P(-hipW, hipY);
     const hipR = P(hipW, hipY);
-    const crotch = P(rng.f(-4, 4), hipY + s * rng.f(0.1, 0.3));
+    const crotch = {
+      x: (Ll[0].x + Rl[0].x) * 0.5,
+      y: Math.max(Ll[0].y, Rl[0].y) + s * 0.14,
+    };
 
     const round = (pts, r) => {
       const out = [];
@@ -3176,56 +3622,81 @@
     // Pinned to the shoulders, the hem landed at the same height whatever the
     // build — measured across seven figures it moved 1.25x while the torso
     // moved 1.56x and the legs 1.85x. A garment belongs to its torso.
-    const hemY = shY + (hipY - shY) * rng.f(0.82, 1.34);
-    const sleeveT = rng.f(0.36, 0.66);
+    //
+    // The fit is its own stream. The body stream is spent drawing the
+    // silhouette, and a raised arm or a lifted knee changes how long that
+    // outline is, which changes how many times the nib rolls the dice. If
+    // the hem and the stripes come off that stream they are a different
+    // garment every frame.
+    const fit = new Rng(hash32(rng.seed, "fit", 1));
+    // Hem and stripe Y must be on the moving body. shY/hipY are rest
+    // layout; during a jump they stay on the ground and the garment
+    // tears off him.
+    const shScreenY = (shoulderL.y + shoulderR.y) / 2;
+    const hipScreenY = (hipL.y + hipR.y) / 2;
+    const hemY = shScreenY + (hipScreenY - shScreenY) * fit.f(0.82, 1.34);
+    const sleeveT = fit.f(0.36, 0.66);
+    const neckR0 = fit.f(0.24, 0.32);
+    const zip = [fit.f(-3, 3), fit.f(-4, 6), fit.f(-6, 8)];
+    const ribY = [fit.f(-2, 2), fit.f(-2, 2), fit.f(-2, 2), fit.f(-2, 2)];
     // A straight rule across the arm at the same place on both sides reads as
     // the seam where two tubes were butted together, not as a sleeve.
     // a hem is not a rule: it wanders, and it stops short of the silhouette
     const hemPts = () => {
-      const x0 = waistL.x + s * rng.f(0.04, 0.16);
-      const x1 = waistR.x - s * rng.f(0.04, 0.16);
+      const x0 = waistL.x + s * fit.f(0.04, 0.16);
+      const x1 = waistR.x - s * fit.f(0.04, 0.16);
+      const wave = fit.f(0.7, 1.6);
+      const amp = fit.f(-0.05, 0.05);
       const pts = [];
       const n = 5;
       for (let i = 0; i <= n; i++) {
         const t = i / n;
         pts.push({
           x: x0 + (x1 - x0) * t,
-          y: hemY + Math.sin(t * Math.PI * rng.f(0.7, 1.6)) * s * rng.f(-0.05, 0.05) + rng.f(-2, 2),
+          y: hemY + Math.sin(t * Math.PI * wave) * s * amp + fit.f(-2, 2),
         });
       }
       return pts;
     };
 
     let wantCuffs = false;
+    const cuffSkip = [fit.chance(0.22), fit.chance(0.22)];
+    const cuffT = [sleeveT + fit.f(-0.12, 0.12), sleeveT + fit.f(-0.12, 0.12)];
+    const cuffFrom = [fit.chance(0.5) ? 0 : 1, fit.chance(0.5) ? 0 : 1];
+    const cuffReach = [fit.f(0.3, 0.7), fit.f(0.3, 0.7)];
+    const cuffBend = [fit.f(-0.2, 0.2), fit.f(-0.2, 0.2)];
+    const cuffW = [fit.f(0.011, 0.018), fit.f(0.011, 0.018)];
     const cuff = (S, side) => {
-      if (rng.chance(0.22)) return; // not every sleeve gets marked
-      const t = sleeveT + rng.f(-0.12, 0.12);
+      const si = side < 0 ? 0 : 1;
+      if (cuffSkip[si]) return; // not every sleeve gets marked
+      const t = cuffT[si];
       const i = Math.max(1, Math.min(S.length - 2, Math.round(t * (S.length - 1))));
       const a = edgeOf(S, armR, -1, side < 0 ? 11 : 83)[i];
       const b = edgeOf(S, armR, 1, side < 0 ? 24 : 96)[i];
       if (!a || !b) return;
       // A mark spanning the arm reads as the seam between two tubes. A cuff
       // is a tick biting in from one edge and stopping.
-      const from = rng.chance(0.5) ? 0 : 1;
+      const from = cuffFrom[si];
       const p0 = from ? b : a;
       const p1 = from ? a : b;
-      const reach = rng.f(0.3, 0.7);
+      const reach = cuffReach[si];
+      const bn = cuffBend[si];
       inkPoly(c, rng, [
         { x: p0.x, y: p0.y },
         {
-          x: p0.x + (p1.x - p0.x) * reach * 0.55 + (p1.y - p0.y) * rng.f(-0.2, 0.2),
-          y: p0.y + (p1.y - p0.y) * reach * 0.55 - (p1.x - p0.x) * rng.f(-0.2, 0.2),
+          x: p0.x + (p1.x - p0.x) * reach * 0.55 + (p1.y - p0.y) * bn,
+          y: p0.y + (p1.y - p0.y) * reach * 0.55 - (p1.x - p0.x) * bn,
         },
         { x: p0.x + (p1.x - p0.x) * reach, y: p0.y + (p1.y - p0.y) * reach },
-      ], { w: s * rng.f(0.011, 0.018), dry: 0.9, wobble: s * 0.018 });
+      ], { w: s * cuffW[si], dry: 0.9, wobble: s * 0.018 });
     };
 
     if (clothes.kind === "tee") {
       wantCuffs = true;
-      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.06, s * rng.f(0.24, 0.32), 0.42, Math.PI - 0.42, rng), { w: s * 0.017, dry: 0.6, wobble: s * 0.035 });
+      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.06, s * neckR0, 0.42, Math.PI - 0.42, fit), { w: s * 0.017, dry: 0.6, wobble: s * 0.035 });
       inkPoly(c, rng, hemPts(), { w: s * 0.018, dry: 0.6, wobble: s * 0.05 });
     } else if (clothes.kind === "hoodie") {
-      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckY + s * 0.36, s * 0.42, 0.35, Math.PI - 0.35, rng), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
+      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.36, s * 0.42, 0.35, Math.PI - 0.35, fit), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
       inkPoly(c, rng, hemPts(), { w: s * 0.021, dry: 0.6, wobble: s * 0.05 });
       const pk = (neckL.x + neckR.x) / 2;
       inkPoly(c, rng, [
@@ -3234,72 +3705,75 @@
         { x: pk + s * 0.3, y: hemY - s * 0.06 },
         { x: pk + s * 0.34, y: hemY - s * 0.44 },
       ], { w: s * 0.016 });
-      inkLine(c, rng, pk - s * 0.06, neckY + s * 0.42, pk - s * 0.1, neckY + s * 0.78, s * 0.013);
-      inkLine(c, rng, pk + s * 0.06, neckY + s * 0.42, pk + s * 0.12, neckY + s * 0.8, s * 0.013);
+      inkLine(c, rng, pk - s * 0.06, neckL.y + s * 0.42, pk - s * 0.1, neckL.y + s * 0.78, s * 0.013);
+      inkLine(c, rng, pk + s * 0.06, neckL.y + s * 0.42, pk + s * 0.12, neckL.y + s * 0.8, s * 0.013);
     } else if (clothes.kind === "jacket") {
       const mid = (neckL.x + neckR.x) / 2;
       inkPoly(c, rng, [
-        { x: mid + rng.f(-3, 3), y: shY - s * 0.02 },
-        { x: mid + rng.f(-4, 6), y: (shY + hemY) / 2 },
-        { x: mid + rng.f(-6, 8), y: hemY },
+        { x: mid + zip[0], y: shScreenY - s * 0.02 },
+        { x: mid + zip[1], y: (shScreenY + hemY) / 2 },
+        { x: mid + zip[2], y: hemY },
       ], { w: s * 0.019, passes: 2 });
       inkPoly(c, rng, [
-        { x: mid - s * 0.3, y: shY - s * 0.04 },
-        { x: mid - s * 0.06, y: shY + s * 0.36 },
-        { x: mid - s * 0.34, y: shY + s * 0.44 },
+        { x: mid - s * 0.3, y: shScreenY - s * 0.04 },
+        { x: mid - s * 0.06, y: shScreenY + s * 0.36 },
+        { x: mid - s * 0.34, y: shScreenY + s * 0.44 },
       ], { w: s * 0.016 });
       inkPoly(c, rng, [
-        { x: mid + s * 0.3, y: shY - s * 0.04 },
-        { x: mid + s * 0.06, y: shY + s * 0.36 },
-        { x: mid + s * 0.34, y: shY + s * 0.44 },
+        { x: mid + s * 0.3, y: shScreenY - s * 0.04 },
+        { x: mid + s * 0.06, y: shScreenY + s * 0.36 },
+        { x: mid + s * 0.34, y: shScreenY + s * 0.44 },
       ], { w: s * 0.016 });
       inkPoly(c, rng, hemPts(), { w: s * 0.02, dry: 0.6, wobble: s * 0.05 });
       wantCuffs = true;
     } else if (clothes.kind === "sweater") {
-      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckY + s * 0.16, s * 0.3, 0.3, Math.PI - 0.3, rng), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
+      inkPoly(c, rng, arcPts((neckL.x + neckR.x) / 2, neckL.y + s * 0.16, s * 0.3, 0.3, Math.PI - 0.3, fit), { w: s * 0.019, dry: 0.6, wobble: s * 0.035 });
       for (let i = 0; i < 4; i++) {
         const y = hemY - s * 0.16 + i * s * 0.055;
-        inkLine(c, rng, waistL.x + s * 0.08, y, waistR.x - s * 0.08, y + rng.f(-2, 2), s * 0.012);
+        inkLine(c, rng, waistL.x + s * 0.08, y, waistR.x - s * 0.08, y + ribY[i], s * 0.012);
       }
       wantCuffs = true;
     }
 
     // Cloth has folds. A flat fill inside a clean outline is the difference
     // between a garment and a silhouette.
-    const fold = (x0, y0, x1, y1, wk) =>
+    const fold = (x0, y0, x1, y1, wk, mx, my) =>
       inkPoly(c, rng, [
         { x: x0, y: y0 },
-        { x: (x0 + x1) / 2 + rng.f(-4, 4), y: (y0 + y1) / 2 + rng.f(-3, 3) },
+        { x: (x0 + x1) / 2 + mx, y: (y0 + y1) / 2 + my },
         { x: x1, y: y1 },
       ], { w: s * (wk ?? 0.014), dry: 0.9, wobble: s * 0.02 });
 
     for (let side = -1; side <= 1; side += 2) {
-      if (rng.chance(0.4)) continue; // not every shoulder gets one
+      if (fit.chance(0.4)) continue; // not every shoulder gets one
       const sx0 = side < 0 ? shoulderL : shoulderR;
-      const n = rng.i(1, 2);
+      const n = fit.i(1, 2);
       for (let i = 0; i < n; i++) {
         fold(
-          sx0.x - side * s * rng.f(0.1, 0.28),
-          sx0.y + s * rng.f(0.16, 0.4),
-          sx0.x - side * s * rng.f(0.34, 0.7),
-          sx0.y + s * rng.f(0.5, 1.0)
+          sx0.x - side * s * fit.f(0.1, 0.28),
+          sx0.y + s * fit.f(0.16, 0.4),
+          sx0.x - side * s * fit.f(0.34, 0.7),
+          sx0.y + s * fit.f(0.5, 1.0),
+          0.014,
+          fit.f(-4, 4),
+          fit.f(-3, 3)
         );
       }
     }
-    if (rng.chance(0.82)) {
-      const n = rng.i(2, 5);
+    if (fit.chance(0.82)) {
+      const n = fit.i(2, 5);
       for (let i = 0; i < n; i++) {
         const x0 = waistL.x + ((waistR.x - waistL.x) * (i + 0.6)) / n;
-        fold(x0, hemY - s * rng.f(0.2, 0.42), x0 + rng.f(-5, 5), hemY - s * rng.f(0.01, 0.08), 0.011);
+        fold(x0, hemY - s * fit.f(0.2, 0.42), x0 + fit.f(-5, 5), hemY - s * fit.f(0.01, 0.08), 0.011, fit.f(-4, 4), fit.f(-3, 3));
       }
     }
-    if (rng.chance(0.6)) {
+    if (fit.chance(0.6)) {
       // shadow under the hem
-      const n = rng.i(4, 9);
+      const n = fit.i(4, 9);
       for (let i = 0; i < n; i++) {
         const t = i / n;
         const x0 = waistL.x + (waistR.x - waistL.x) * t;
-        inkLine(c, rng, x0, hemY - s * rng.f(0.02, 0.1), x0 + s * rng.f(0.04, 0.1), hemY + rng.f(-2, 2), s * 0.01);
+        inkLine(c, rng, x0, hemY - s * fit.f(0.02, 0.1), x0 + s * fit.f(0.04, 0.1), hemY + fit.f(-2, 2), s * 0.01);
       }
     }
 
@@ -3309,32 +3783,32 @@
       outline.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
       c.closePath();
       c.clip();
-      const pitch = s * rng.f(0.11, 0.3);
-      const heavy = s * rng.f(0.022, 0.07);
+      const pitch = s * fit.f(0.11, 0.3);
+      const heavy = s * fit.f(0.022, 0.07);
       if (clothes.pattern === "stripe") {
         // skewed independently, gaps varying, a third running past the edge
-        for (let y = shY + s * rng.f(0.04, 0.2); y < hemY; y += pitch * rng.f(0.6, 1.4)) {
-          const skew = rng.f(-0.14, 0.14) * shW;
-          const over = rng.chance(0.34) ? rng.f(0.1, 0.45) : 0;
+        for (let y = shScreenY + s * fit.f(0.04, 0.2); y < hemY; y += pitch * fit.f(0.6, 1.4)) {
+          const skew = fit.f(-0.14, 0.14) * shW;
+          const over = fit.chance(0.34) ? fit.f(0.1, 0.45) : 0;
           inkPoly(c, rng, [
             { x: cx - shW * (1.2 + over), y: y - skew },
-            { x: cx + rng.f(-6, 6), y: y + rng.f(-3, 4) },
-            { x: cx + shW * (1.2 + over), y: y + skew + rng.f(-4, 4) },
-          ], { w: heavy * rng.f(0.7, 1.3), dry: 0.5, wobble: s * 0.035 });
+            { x: cx + fit.f(-6, 6), y: y + fit.f(-3, 4) },
+            { x: cx + shW * (1.2 + over), y: y + skew + fit.f(-4, 4) },
+          ], { w: heavy * fit.f(0.7, 1.3), dry: 0.5, wobble: s * 0.035 });
         }
       } else if (clothes.pattern === "vstripe") {
-        for (let x = cx - shW * 1.3; x < cx + shW * 1.3; x += pitch * rng.f(0.75, 1.3)) {
+        for (let x = cx - shW * 1.3; x < cx + shW * 1.3; x += pitch * fit.f(0.75, 1.3)) {
           inkPoly(c, rng, [
-            { x, y: shY + s * rng.f(-0.1, 0.15) },
-            { x: x + rng.f(-4, 4), y: (shY + hemY) / 2 },
-            { x: x + rng.f(-5, 5), y: hemY - s * rng.f(-0.1, 0.2) },
+            { x, y: shScreenY + s * fit.f(-0.1, 0.15) },
+            { x: x + fit.f(-4, 4), y: (shScreenY + hemY) / 2 },
+            { x: x + fit.f(-5, 5), y: hemY - s * fit.f(-0.1, 0.2) },
           ], { w: heavy * 0.42, dry: 0.9, wobble: s * 0.03 });
         }
       } else if (clothes.pattern === "dark") {
         // a black garment — the garment, not the whole figure. The core
         // outline runs all the way to the shoes.
         c.beginPath();
-        c.rect(cx - s * 4, shY - s * 0.9, s * 8, hemY - shY + s * 0.9);
+        c.rect(cx - s * 4, shScreenY - s * 0.9, s * 8, hemY - shScreenY + s * 0.9);
         c.clip();
         inkMassFill(c, rng, core, INK, { bite: s * 0.06 });
       }
@@ -3350,7 +3824,7 @@
       c.closePath();
       c.clip();
       c.beginPath();
-      c.rect(cx - s * 4, hipY - s * 0.05, s * 8, s * 4);
+      c.rect(cx - s * 4, hipScreenY - s * 0.05, s * 8, s * 4);
       c.clip();
       inkMassFill(c, rng, core, INK, { bite: s * 0.055 });
       c.restore();
@@ -4113,7 +4587,7 @@
       : P.bearing === "slumped" ? rng.pick(["pockets", "down", "folded"])
       : rng.pick(["down", "down", "pockets", "hips", "folded"]);
 
-    return applyHouseStyle(applyQuirk({
+    const d = applyHouseStyle(applyQuirk({
       person: P,
       name: makeName(rng),
       yaw: rng.f(-0.75, 0.75),
@@ -4167,6 +4641,13 @@
       pen: rng.f(0.9, 1.22),
       brows,
     }, rng), rng);
+    // The cut of the hair is the person's, not a roll the pen takes while
+    // drawing the face. If it is picked from the mark stream after the ears
+    // and the outline, a turn that hides an ear re-rolls the hairline and
+    // he is wearing a different head every frame.
+    d.hairShape = rng.pick(["flat", "peak", "peak", "round", "sweep", "receded", "jagged", "low"]);
+    d.hairOuter = rng.pick(["skull", "skull", "quiff", "flattop", "dome", "wedge", "wedge", "sweep"]);
+    return d;
   }
 
   // The marks that make one dude, drawn about (cx, cy) at size s. Split out of
@@ -4178,7 +4659,19 @@
     const rng = R.mark;
     setPen(dude.penKind);
 
-    const skull = new Skull(cx, cy, s, dude.yaw, dude.pitch, dude.roll, dude.ratio, dude.depth, {
+    // The head rides the torso, so it takes the whole bob and sway — the body
+    // fades its displacement out towards the floor, the head never does. And
+    // the pose deltas go into the skull itself rather than onto the finished
+    // drawing, which is the entire point of there being a skull: the ears, the
+    // hair, the hat and the far eye turn with it instead of sliding across it.
+    const bodyS = s * 0.9;
+    const hx = cx + MOTION.sway * bodyS;
+    const hy = cy + MOTION.bob * bodyS;
+    const yaw = Math.max(-0.95, Math.min(0.95, dude.yaw + MOTION.yaw));
+    const pitch = Math.max(-0.6, Math.min(0.6, dude.pitch + MOTION.pitch));
+    const roll = dude.roll + MOTION.roll;
+
+    const skull = new Skull(hx, hy, s, yaw, pitch, roll, dude.ratio, dude.depth, {
       jaw: dude.jaw,
       chin: dude.chin,
       crown: dude.crown,
@@ -4211,12 +4704,12 @@
       for (let i = 0; i < 14; i++) {
         const a = (i / 14) * Math.PI * 2;
         const k = rr * (1 + (fbm2(i * 0.5, 3, R.colour.seed) - 0.5) * 0.3);
-        blob.push({ x: cx + Math.cos(a) * k, y: cy + Math.sin(a) * k * 1.08 });
+        blob.push({ x: hx + Math.cos(a) * k, y: hy + Math.sin(a) * k * 1.08 });
       }
       colourPass(c, R.colour, s, [{ pts: blob }]);
     }
 
-    const body = drawBody(c, R.body, cx, cy + s * 1.18, s * 0.9, dude.lean + dude.yaw * 0.25, dude.clothes, dude.person);
+    const body = drawBody(c, R.body, cx, cy + s * 1.18, bodyS, dude.lean + yaw * 0.25, dude.clothes, dude.person);
     const hull = skull.silhouette();
     const prof = noseProfile(skull, dude);
     // His commonest nose is the contour itself, so bend the hull before it is
@@ -4224,20 +4717,49 @@
     const bump = dude.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
     headFill(c, rng, skull, hull, dude.skin);
     const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, dude.nose, dude.noseHeavy);
-    const ears = drawEars(c, rng, skull);
-    // he draws it both ways: the outline gives way to the nose, or the head
-    // is a closed loop with the nose laid across it and nothing erased
-    const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
+    if (nose && bump) nose.bump = bump;
+    // The hoop stops where the nose is. A chance of leaving it closed is
+    // how the face outline used to show through the nose.
+    let gaps = outlineGaps(skull, hull, [nose && nose.outer]);
+    if (nose && nose.outer) {
+      const rad = skull.s * 0.06;
+      for (let i = 0; i < hull.length; i++) {
+        if (nearPath(hull[i], nose.outer, rad)) gaps[i] = true;
+      }
+    }
+    // Eyes sit on the hoop. If the hoop is left intact, it reads through
+    // the white no matter how we fill the almond afterwards.
+    {
+      const eg = skull.eyeGap ?? 0.36;
+      const fy = skull.faceY || 0;
+      const eL = landmark(skull, { x: -eg, y: -0.12 + fy, z: 0.88 });
+      const eR = landmark(skull, { x: eg, y: -0.12 + fy, z: 0.88 });
+      const er = skull.s * 0.15;
+      for (let i = 0; i < hull.length; i++) {
+        if (eL.nz > 0.04 && Math.hypot(hull[i].x - eL.x, hull[i].y - eL.y) < er) gaps[i] = true;
+        if (eR.nz > 0.04 && Math.hypot(hull[i].x - eR.x, hull[i].y - eR.y) < er) gaps[i] = true;
+      }
+    }
+    if (bump) {
+      // keep the knuckle, but still allow the eye gaps we just marked
+    }
     headOutline(c, rng, skull, hull, gaps);
     // the shadow falls away from the turn
     if (dude.shade) cheekHatch(c, rng, skull, hull, -(Math.sign(prof.x) || 1));
     const inFront = [];
-    const hairMassPts = drawHair(c, rng, skull, hull, dude.hair, penShade(dude.hairColor), inFront, dude.hairTone);
+    const hairMassPts = drawHair(c, R.hair || rng, skull, hull, dude.hair, penShade(dude.hairColor), inFront, dude.hairTone, {
+      shape: dude.hairShape,
+      outer: dude.hairOuter,
+    });
     drawBrows(c, rng, skull, dude.brows);
     drawEyes(c, rng, skull, dude.eyes);
     // beard first: a filled mass drawn after the mouth swallows it
     drawFacialHair(c, rng, skull, dude.beard);
     drawMouth(c, rng, skull, dude.mouth, nose);
+    // Mouth and hoop were drawn after the nose, so they sat on top of it.
+    // Cover them: the nose is in front of the face.
+    coverNose(c, rng, skull, nose, hull);
+    drawEars(c, rng, skull); // after the hoop, so it cannot show through the head
     inFront.forEach((f) => f()); // brims and locks sit over the face, not under it
 
     if (dude.colour && dude.colour !== "behind") {
@@ -4266,6 +4788,11 @@
   // the ends is close and always a shade generous.
   const BTN_TEXT = "another dude";
   const CREDITS = ["inspired by mannay", "ruined by @johnbr0"];
+  // The keys, written on the paper like everything else — and pressable, so
+  // the thing works on a phone, where there is no A to press. The first line
+  // says what pressing it will do, not what state he is in.
+  const LEGEND_MOVE = ["a  make him move", "a  let him rest"];
+  const LEGEND_MOTION = "m  something else";
 
   function inkWidth(text, size) {
     return size * (text.length * 0.95 + 0.9);
@@ -4280,7 +4807,7 @@
 
   // Worked out before anything is drawn, because the figure has to be fitted
   // into whatever is left above it.
-  function footerLayout(w, h) {
+  function footerLayout(w, h, moving) {
     const pad = Math.max(14, Math.min(w * 0.055, 34));
     const inner = w - pad * 2;
     // big enough to read on a phone, held back from shouting on a desktop,
@@ -4289,16 +4816,23 @@
     const cred = Math.max(11.5, Math.min(btn * 0.72, inner / 19.6));
     const credW = Math.max(inkWidth(CREDITS[0], cred), inkWidth(CREDITS[1], cred));
     const btnW = inkWidth(BTN_TEXT, btn);
+    const legend = [moving ? LEGEND_MOVE[1] : LEGEND_MOVE[0], LEGEND_MOTION];
+    // "something" has a descender; the label above it does not
+    const legLead = cred * 1.7;
+    const legW = Math.max(inkWidth(legend[0], cred), inkWidth(legend[1], cred));
+    // the label and the keys under it are one column now
+    const leftW = Math.max(btnW, legW);
+    const leftH = btn * 1.95 + legLead * legend.length;
     // side by side when the two columns fit with a gap worth the name, and
     // stacked when they do not — a phone gets the label over the credit
-    const cols = btnW + credW + pad * 3 <= w;
+    const cols = leftW + credW + pad * 3 <= w;
     // enough to clear the descenders on "inspired by" and "@johnbr0"
     const credLead = cred * 1.95;
     const bandH = cols
-      ? Math.max(btn * 1.5, credLead + cred * 1.45) + pad * 0.7
-      : btn * 1.9 + credLead + cred * 1.45 + pad * 0.4;
+      ? Math.max(leftH, credLead + cred * 1.45) + pad * 0.7
+      : btn * 1.95 + legLead * legend.length + credLead + cred * 1.9 + pad * 0.4;
     const bottom = h - Math.max(14, pad * 0.8) - safeBottom();
-    return { pad, btn, cred, btnW, credW, credLead, cols, bottom, top: bottom - bandH };
+    return { pad, btn, cred, btnW, credW, credLead, legend, legLead, legW, leftW, leftH, cols, bottom, top: bottom - bandH };
   }
 
   function drawFooter(c, seed, w, F) {
@@ -4316,11 +4850,21 @@
 
     // x is the glyph's centre line, so half a letter is added to make the
     // left margin on the page actually equal to the padding
+    // the keys, written under the label they belong with
+    const legendAt = (x, y0) => {
+      F.legend.forEach((t, i) => {
+        const y = y0 + i * F.legLead;
+        const a = drawName(c, rngFor(seed, "footer", 3 + i), t, x, y, F.cred, { caps: false, rule: false, w: 0.07 });
+        hits[i ? "motion" : "move"] = box(x, y, a, F.cred, Math.max(F.legLead, 34));
+      });
+    };
+
     if (F.cols) {
       const bx = F.pad + F.btn * 0.5;
-      const by = F.top + (F.bottom - F.top - F.btn * 1.5) * 0.5 + F.btn * 0.1;
+      const by = F.top + (F.bottom - F.top - F.leftH) * 0.5 + F.btn * 0.1;
       const adv = drawName(c, rngFor(seed, "footer", 0), BTN_TEXT, bx, by, F.btn, { caps: false, rule: true, w: 0.075 });
       hits.another = box(bx, by, adv, F.btn, 44);
+      legendAt(F.pad + F.cred * 0.5, by + F.btn * 1.85);
       const rx = w - F.pad - F.credW + F.cred * 0.5;
       const ry = F.top + (F.bottom - F.top - (F.credLead + F.cred * 1.45)) * 0.5 + F.cred * 0.1;
       CREDITS.forEach((t, i) => {
@@ -4333,7 +4877,9 @@
       const by = F.top + F.btn * 0.25;
       const adv = drawName(c, rngFor(seed, "footer", 0), BTN_TEXT, bx, by, F.btn, { caps: false, rule: true, w: 0.075 });
       hits.another = box(bx, by, adv, F.btn, 44);
-      const ry = by + F.btn * 1.9;
+      const ly = by + F.btn * 1.85;
+      legendAt(bx, ly);
+      const ry = ly + F.legLead * F.legend.length + F.cred * 0.25;
       CREDITS.forEach((t, i) => {
         const y = ry + i * F.credLead;
         const a = drawName(c, rngFor(seed, "footer", i + 1), t, bx, y, F.cred, { caps: false, rule: false, w: 0.07 });
@@ -4361,8 +4907,8 @@
   let measCv = null;
   const extentCache = new Map();
 
-  function figureExtent(seed, dude) {
-    const key = seed >>> 0;
+  function figureExtent(seed, dude, tag) {
+    const key = `${seed >>> 0}:${tag || ""}`;
     const hit = extentCache.get(key);
     if (hit) return hit;
     // generous enough that nothing can run off the edge of the measuring
@@ -4388,7 +4934,7 @@
       // different number of random numbers and hands back a different dude.
       // So the offset goes in the transform and he is always drawn at 0, 0.
       mc.setTransform(1, 0, 0, 1, ox, oy);
-      const MR = { mark: rngFor(seed, "mark"), body: rngFor(seed, "body"), colour: rngFor(seed, "colour") };
+      const MR = { mark: rngFor(seed, "mark"), body: rngFor(seed, "body"), colour: rngFor(seed, "colour"), hair: rngFor(seed, "hair") };
       figureInk(mc, MR, dude, 0, 0, CANON);
       const d = mc.getImageData(0, 0, mw, mh).data;
       let x0 = mw;
@@ -4423,9 +4969,35 @@
     return ext;
   }
 
+  // A moving dude needs room for the tallest thing he does, not for the pose
+  // he happens to be in when the page loads. So he is measured at several
+  // points around his cycle and given the union — otherwise the frame he
+  // waves in is the frame his hand goes off the top of the sheet.
+  function motionExtent(seed, dude, kind) {
+    const was = MOTION;
+    const ext = { up: 0, down: 0, left: 0, right: 0 };
+    try {
+      // Ten points round the cycle, not six: the frames between the samples
+      // are real frames, and a hand that reaches furthest between two of them
+      // would be clipped by the band that gets repainted.
+      const N = 10;
+      for (let i = 0; i < N; i++) {
+        MOTION = motionAt(kind, i / N);
+        const e = figureExtent(seed, dude, `${kind}${i}`);
+        ext.up = Math.max(ext.up, e.up);
+        ext.down = Math.max(ext.down, e.down);
+        ext.left = Math.max(ext.left, e.left);
+        ext.right = Math.max(ext.right, e.right);
+      }
+    } finally {
+      MOTION = was;
+    }
+    return ext;
+  }
+
   function drawDude(c, R, dude, w, h, seed) {
     paper(c, w, h, R.paper);
-    const foot = footerLayout(w, h);
+    const foot = footerLayout(w, h, false);
     // Placement draws from its own stream. It used to come off "mark", which
     // meant the measuring pass and the real pass were no longer the same dude
     // — and it is the wrong stream anyway: where he stands on the sheet is
@@ -4679,16 +5251,38 @@
         const bump = d.nose === "silhouette" ? noseBump(skull, hull, rng, prof) : null;
         headFill(c, rng, skull, hull, d.skin);
         const nose = bump ? silhouetteNose(c, rng, skull, hull, bump, prof) : drawNose(c, rng, skull, d.nose, d.noseHeavy);
-        const ears = drawEars(c, rng, skull);
-        const gaps = !bump && rng.chance(0.62) ? outlineGaps(skull, hull, [nose && nose.outer].concat(ears)) : null;
+        if (nose && bump) nose.bump = bump;
+        let gaps = outlineGaps(skull, hull, [nose && nose.outer]);
+        if (nose && nose.outer) {
+          const rad = s * 0.06;
+          for (let i = 0; i < hull.length; i++) {
+            if (nearPath(hull[i], nose.outer, rad)) gaps[i] = true;
+          }
+        }
+        {
+          const eg = skull.eyeGap ?? 0.36;
+          const fy = skull.faceY || 0;
+          const eL = landmark(skull, { x: -eg, y: -0.12 + fy, z: 0.88 });
+          const eR = landmark(skull, { x: eg, y: -0.12 + fy, z: 0.88 });
+          const er = s * 0.15;
+          for (let i = 0; i < hull.length; i++) {
+            if (eL.nz > 0.04 && Math.hypot(hull[i].x - eL.x, hull[i].y - eL.y) < er) gaps[i] = true;
+            if (eR.nz > 0.04 && Math.hypot(hull[i].x - eR.x, hull[i].y - eR.y) < er) gaps[i] = true;
+          }
+        }
         headOutline(c, rng, skull, hull, gaps);
         if (d.shade) cheekHatch(c, rng, skull, hull, -(Math.sign(prof.x) || 1));
         const inFront = [];
-        const hairMassPts = drawHair(c, rng, skull, hull, d.hair, penShade(d.hairColor), inFront, d.hairTone);
+        const hairMassPts = drawHair(c, rngFor(seed0, "hair", idx), skull, hull, d.hair, penShade(d.hairColor), inFront, d.hairTone, {
+          shape: d.hairShape,
+          outer: d.hairOuter,
+        });
         drawBrows(c, rng, skull, d.brows);
         drawEyes(c, rng, skull, d.eyes);
         drawFacialHair(c, rng, skull, d.beard);
         drawMouth(c, rng, skull, d.mouth, nose);
+        coverNose(c, rng, skull, nose, hull);
+        drawEars(c, rng, skull);
         inFront.forEach((f) => f());
         if (rng.chance(0.3)) drawNeck(c, rng, skull);
         if (d.colour) {
@@ -4712,11 +5306,135 @@
     grainPass(c, c.__dpr);
   }
 
-  // ---------- app ----------
-  const PLATE = !!new URLSearchParams(location.search).get("plate");
-  if (PLATE) document.body.classList.add("plate");
+  // ---------- moving pictures (?anim=1) ----------
+  //
+  // A flipbook, not a film. The sheet — paper, grain, the name, the words at
+  // the foot of the page — is drawn once into a bitmap, because none of it
+  // moves and the grain pass alone costs three times what the whole figure
+  // does. Every frame is then that bitmap blitted, and the dude drawn over it
+  // from scratch: same seed, same decisions, same person, different pose.
+  //
+  // Drawn from scratch is the important part. He is not a picture being
+  // transformed. The rig moves and the pen goes over him again, so the line
+  // boils the way a line does when a hand draws it twice, and the head turns
+  // in space rather than skewing on the page.
+  function makeAnimation(canvasEl, seed, dude, w, h, dpr, kind) {
+    const foot = footerLayout(w, h, true);
+    const ext = motionExtent(seed, dude, kind);
+    const place = rngFor(seed, "place");
 
-  const links = { another: btn, a: document.getElementById("link-a"), b: document.getElementById("link-b") };
+    const mx = Math.max(12, Math.min(w * 0.05, 40));
+    const top = Math.max(10, Math.min(h * 0.035, 34));
+    const availH = Math.max(80, foot.top - top);
+    const availW = Math.max(80, w - mx * 2);
+    const nameRoom = CANON * 0.62;
+    const rel = 0.88 + 0.12 * Math.max(0, Math.min(1, (dude.size - 98) / 28));
+    const k = Math.min(availH / (ext.up + ext.down + nameRoom), availW / (ext.left + ext.right), 1.5) * rel;
+    const s = CANON * k;
+    const cx = Math.max(mx + ext.left * k, Math.min(w - mx - ext.right * k, w * 0.5));
+    const cy = top + ext.up * k + Math.max(0, availH - (ext.up + ext.down + nameRoom) * k) * 0.5;
+
+    // The strip of sheet the figure can reach, so only that gets repainted.
+    // Snapped to whole DEVICE pixels: a source rectangle landing on a half
+    // pixel makes drawImage resample, and the resampled edge shows up as a
+    // seam down the paper exactly where the band stops.
+    const pad = 14;
+    const snap = (v, up) => (up ? Math.ceil(v * dpr) : Math.floor(v * dpr)) / dpr;
+    const box = {
+      x: Math.max(0, snap(cx - ext.left * k - pad, false)),
+      y: Math.max(0, snap(cy - ext.up * k - pad, false)),
+      w: 0,
+      h: 0,
+    };
+    box.w = Math.min(w, snap(cx + ext.right * k + pad, true)) - box.x;
+    box.h = Math.min(h, snap(cy + ext.down * k + pad, true)) - box.y;
+
+    // ---- the sheet, once ----
+    const bd = document.createElement("canvas");
+    bd.width = Math.round(w * dpr);
+    bd.height = Math.round(h * dpr);
+    const bc = bd.getContext("2d", { willReadFrequently: true });
+    bc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    bc.__dpr = dpr;
+    paper(bc, w, h, rngFor(seed, "paper"));
+    setPen(dude.penKind);
+    const nameSize = Math.min(s * place.f(0.19, 0.26), (w - mx * 2) / (String(dude.name).length * 0.95 + 0.8));
+    const nameW = nameSize * (String(dude.name).length * 0.95 + 0.8);
+    const nameX = Math.max(mx, Math.min(w - nameW - mx, cx - nameW * 0.5 + place.f(-s * 0.3, s * 0.3)));
+    const nameY = Math.min(foot.top - nameSize * 1.95, cy + ext.down * k + s * place.f(0.16, 0.4));
+    drawName(bc, rngFor(seed, "name"), dude.name, nameX, nameY, nameSize);
+    setPen("nib");
+    const hits = drawFooter(bc, seed, w, foot);
+    grainPass(bc, dpr);
+
+    const c = canvasEl.getContext("2d");
+    let last = -1;
+
+    return {
+      hits,
+      // t is the phase of the cycle, 0..1. frameNo only drives the boil, so
+      // holding on a phase still redraws rather than freezing.
+      draw(t, frameNo) {
+        if (frameNo === last) return;
+        last = frameNo;
+        MOTION = motionAt(kind, t);
+        BOIL = frameNo * 0.41;
+        const R = {
+          mark: rngFor(seed, "mark"),
+          body: rngFor(seed, "body"),
+          colour: rngFor(seed, "colour"),
+          hair: rngFor(seed, "hair"),
+        };
+        c.save();
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Only the band he can reach is repainted. Blitting the whole sheet
+        // every frame is most of the cost of a frame on a big window.
+        c.drawImage(
+          bd,
+          Math.round(box.x * dpr), Math.round(box.y * dpr),
+          Math.round(box.w * dpr), Math.round(box.h * dpr),
+          box.x, box.y, box.w, box.h
+        );
+        c.beginPath();
+        c.rect(box.x, box.y, box.w, box.h);
+        c.clip();
+        c.translate(cx, cy);
+        c.scale(k, k);
+        figureInk(c, R, dude, 0, 0, CANON);
+        c.restore();
+        MOTION = REST;
+        BOIL = 0;
+      },
+      // the whole sheet, for the first frame and after a resize
+      blit() {
+        c.save();
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        c.drawImage(bd, 0, 0, bd.width, bd.height, 0, 0, w, h);
+        c.restore();
+        last = -1;
+      },
+    };
+  }
+
+  // ---------- app ----------
+  const Q = new URLSearchParams(location.search);
+  const PLATE = !!Q.get("plate");
+  if (PLATE) document.body.classList.add("plate");
+  // He moves unless you ask him not to. ?anim=0 holds him still. ?m=wave
+  // insists on one thing; without ?m his seed picks.
+  let animOn = Q.get("anim") !== "0" && Q.get("anim") !== "false";
+  const forcedMotion = MOTIONS[Q.get("m")] ? Q.get("m") : null;
+  // ?ph=0.25 freezes the cycle at one phase, so a frame can be looked at
+  // properly instead of being caught in passing
+  const forcedPhase = Q.get("ph") !== null && !isNaN(parseFloat(Q.get("ph"))) ? parseFloat(Q.get("ph")) : null;
+
+  const links = {
+    another: btn,
+    a: document.getElementById("link-a"),
+    b: document.getElementById("link-b"),
+    move: document.getElementById("move"),
+    motion: document.getElementById("motion"),
+  };
 
   // The words are ink on the paper, so the button and the links are invisible
   // boxes laid over exactly where that ink landed — the page stays one
@@ -4740,6 +5458,40 @@
 
   let count = 0;
   let seed = parseSeed();
+  let anim = null;
+  let nextKind = null;
+  let lastDude = null;
+  let lastCssW = 0;
+  let lastCssH = 0;
+  let lastDpr = 1;
+  let raf = 0;
+  let startedAt = 0;
+  let frameNo = 0;
+
+  function stopAnim() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    anim = null;
+  }
+
+  // Twelve drawings a second. Not a frame rate chosen to be cheap — a hand
+  // does not redraw a figure sixty times a second, and at sixty the boil
+  // turns into a shimmer and the whole thing stops looking drawn. Twelve is
+  // where it reads as a flipbook, and it is also two frames on ones for every
+  // frame a screen shows, which is exactly how this has always been done.
+  const FPS = 12;
+
+  function tick(now) {
+    raf = requestAnimationFrame(tick);
+    if (!anim) return;
+    if (!startedAt) startedAt = now;
+    const el = (now - startedAt) / 1000;
+    const f = Math.floor(el * FPS);
+    if (f === frameNo) return;
+    frameNo = f;
+    const period = MOTION_PERIOD[anim.kind] || 1.4;
+    anim.book.draw((el / period) % 1, f);
+  }
 
   function render(nextSeed) {
     seed = nextSeed >>> 0;
@@ -4751,6 +5503,7 @@
       name: rngFor(seed, "name"),
       colour: rngFor(seed, "colour"),
       place: rngFor(seed, "place"),
+      hair: rngFor(seed, "hair"),
     };
     const dude = makeDude(R.person);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -4762,9 +5515,25 @@
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.__dpr = dpr;
+    stopAnim();
+    lastDude = dude;
+    lastCssW = cssW;
+    lastCssH = cssH;
+    lastDpr = dpr;
     if (PLATE) {
       drawPlate(ctx, cssW, cssH, seed);
       placeHits(null);
+    } else if (animOn) {
+      const kind = nextKind || forcedMotion || MOTION_NAMES[rngFor(seed, "motion").i(0, MOTION_NAMES.length - 1)];
+      nextKind = null;
+      const book = makeAnimation(canvas, seed, dude, cssW, cssH, dpr, kind);
+      anim = { book, kind };
+      placeHits(book.hits);
+      book.blit();
+      startedAt = 0;
+      frameNo = -1;
+      book.draw(forcedPhase ?? 0, 0);
+      if (forcedPhase === null && !raf) raf = requestAnimationFrame(tick);
     } else {
       placeHits(drawDude(ctx, R, dude, cssW, cssH, seed));
     }
@@ -4779,11 +5548,60 @@
     render((Math.random() * 0xffffffff) >>> 0);
   }
 
+  // The words on the paper and the keys do the same two things, so both go
+  // through here. A phone has no A to press.
+  function toggleMove() {
+    if (PLATE) return;
+    animOn = !animOn;
+    const url = new URL(location.href);
+    if (animOn) url.searchParams.set("anim", "1");
+    else url.searchParams.delete("anim");
+    history.replaceState(null, "", url);
+    count -= 1;
+    render(seed);
+  }
+
+  // Something else to do. If he is standing still, this starts him — a label
+  // that does nothing until you have found the other label first is not a
+  // label, it is a puzzle.
+  function nextMotion() {
+    if (PLATE) return;
+    if (!anim) {
+      nextKind = MOTION_NAMES[(MOTION_NAMES.indexOf(nextKind || MOTION_NAMES[0]) + 1) % MOTION_NAMES.length];
+      if (!animOn) return toggleMove();
+    }
+    const i = MOTION_NAMES.indexOf(anim.kind);
+    const kind = MOTION_NAMES[(i + 1) % MOTION_NAMES.length];
+    const book = makeAnimation(canvas, seed, lastDude, lastCssW, lastCssH, lastDpr, kind);
+    anim = { book, kind };
+    placeHits(book.hits);
+    book.blit();
+    startedAt = 0;
+    frameNo = -1;
+    book.draw(0, 0);
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+
   btn.addEventListener("click", another);
+  if (links.move) links.move.addEventListener("click", toggleMove);
+  if (links.motion) links.motion.addEventListener("click", nextMotion);
   window.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && e.target === document.body) {
+    if (e.target !== document.body) return;
+    if (e.code === "Space") {
       e.preventDefault();
       another();
+      return;
+    }
+    if (PLATE) return;
+    // A: make him move, or let him rest. M: give him something else to do.
+    if (e.key === "a" || e.key === "A") {
+      e.preventDefault();
+      toggleMove();
+      return;
+    }
+    if (e.key === "m" || e.key === "M") {
+      e.preventDefault();
+      nextMotion();
     }
   });
   // A phone fires resize for the address bar sliding away. Redrawing the whole
