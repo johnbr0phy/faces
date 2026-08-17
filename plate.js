@@ -103,10 +103,14 @@
       colour: faceRng(face, "colour"),
       hair: faceRng(face, "hair"),
     };
-    D.figureInk(c, R, face.dude, face.cx, face.cy, face.s, {
-      headOnly: true,
-      neck: face.neck,
-    });
+    // The homepage dude.js draws a full figure. Clip to the skull so this
+    // page never needs a fork of that file.
+    c.save();
+    c.beginPath();
+    c.rect(face.cx - face.s * 1.75, face.cy - face.s * 1.9, face.s * 3.5, face.s * 2.85);
+    c.clip();
+    D.figureInk(c, R, face.dude, face.cx, face.cy, face.s);
+    c.restore();
     D.rest();
   }
 
@@ -235,7 +239,6 @@
           cx,
           cy,
           s,
-          neck: D.rngFor(seed, "neck", idx).chance(0.3),
           looking: false,
           startedAt: 0,
           frame: 0,

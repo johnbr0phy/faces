@@ -5577,9 +5577,8 @@
   // throwaway bitmap, to find out how much room this particular dude needs —
   // his hat, his swung arm, his shoes — and once for real. Nothing in here
   // knows about the page, so the caller is free to put him where he fits.
-  function figureInk(c, R, dude, cx, cy, s, opt) {
+  function figureInk(c, R, dude, cx, cy, s) {
     const rng = R.mark;
-    const headOnly = !!(opt && opt.headOnly);
     setPen(dude.penKind);
 
     // The head rides the torso, so it takes the whole bob and sway — the body
@@ -5632,15 +5631,13 @@
       colourPass(c, R.colour, s, [{ pts: blob }]);
     }
 
-    const body = headOnly
-      ? { footY: hy, maxX: hx, core: null }
-      : drawBody(c, R.body, cx, cy + s * 1.18, bodyS, dude.lean, dude.clothes, dude.person, {
-          yaw,
-          pitch,
-          roll,
-          depth: dude.depth,
-          body: dude.body,
-        });
+    const body = drawBody(c, R.body, cx, cy + s * 1.18, bodyS, dude.lean, dude.clothes, dude.person, {
+      yaw,
+      pitch,
+      roll,
+      depth: dude.depth,
+      body: dude.body,
+    });
     const hull = skull.silhouette();
     const prof = noseProfile(skull, dude);
     // His commonest nose is the contour itself, so bend the hull before it is
@@ -5692,10 +5689,6 @@
     coverNose(c, rng, skull, nose, hull);
     drawEars(c, rng, skull); // after the hoop, so it cannot show through the head
     inFront.forEach((f) => f()); // brims and locks sit over the face, not under it
-    // A plate of heads needs a neck. Every reference sheet has one; a head
-    // floating alone on the paper does not read. The caller decides, once,
-    // so a turn cannot spend the rng differently and make it flicker off.
-    if (headOnly && opt.neck) drawNeck(c, rng, skull);
 
     if (dude.colour && dude.colour !== "behind") {
       const targets = [];
