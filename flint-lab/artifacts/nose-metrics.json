@@ -1,0 +1,512 @@
+[
+  {
+    "dir": "center",
+    "john": {
+      "source_xy": [
+        427.55,
+        533.55
+      ],
+      "source_norm_xy": [
+        0.5139,
+        0.4275
+      ],
+      "circle_norm_xy": [
+        0.5139,
+        0.5313
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        405.04,
+        583.93
+      ],
+      "source_norm_xy": [
+        0.5274,
+        0.7603
+      ],
+      "circle_norm_xy": [
+        0.5274,
+        0.7603
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        397.23,
+        493.11
+      ],
+      "source_norm_xy": [
+        0.5172,
+        0.4281
+      ],
+      "circle_norm_xy": [
+        0.5172,
+        0.5321
+      ]
+    },
+    "transform": {
+      "translate_x": -10.38,
+      "translate_y": -91.42,
+      "target_x": 394.66,
+      "target_y": 492.51
+    }
+  },
+  {
+    "dir": "up",
+    "john": {
+      "source_xy": [
+        421.58,
+        465.14
+      ],
+      "source_norm_xy": [
+        0.5067,
+        0.3727
+      ],
+      "circle_norm_xy": [
+        0.5067,
+        0.4491
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        415.53,
+        469.39
+      ],
+      "source_norm_xy": [
+        0.5411,
+        0.6112
+      ],
+      "circle_norm_xy": [
+        0.5411,
+        0.6112
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        387.93,
+        429.1
+      ],
+      "source_norm_xy": [
+        0.5051,
+        0.3725
+      ],
+      "circle_norm_xy": [
+        0.5051,
+        0.4487
+      ]
+    },
+    "transform": {
+      "translate_x": -26.38,
+      "translate_y": -40.03,
+      "target_x": 389.15,
+      "target_y": 429.36
+    }
+  },
+  {
+    "dir": "up-right",
+    "john": {
+      "source_xy": [
+        494.22,
+        507.42
+      ],
+      "source_norm_xy": [
+        0.594,
+        0.4066
+      ],
+      "circle_norm_xy": [
+        0.594,
+        0.4999
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        418.35,
+        559.25
+      ],
+      "source_norm_xy": [
+        0.5447,
+        0.7282
+      ],
+      "circle_norm_xy": [
+        0.5447,
+        0.7282
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        456.14,
+        468.36
+      ],
+      "source_norm_xy": [
+        0.5939,
+        0.4066
+      ],
+      "circle_norm_xy": [
+        0.5939,
+        0.4998
+      ]
+    },
+    "transform": {
+      "translate_x": 37.85,
+      "translate_y": -90.86,
+      "target_x": 456.2,
+      "target_y": 468.38
+    }
+  },
+  {
+    "dir": "right",
+    "john": {
+      "source_xy": [
+        541.18,
+        524.35
+      ],
+      "source_norm_xy": [
+        0.6505,
+        0.4202
+      ],
+      "circle_norm_xy": [
+        0.6505,
+        0.5202
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        505.98,
+        533.58
+      ],
+      "source_norm_xy": [
+        0.6588,
+        0.6948
+      ],
+      "circle_norm_xy": [
+        0.6588,
+        0.6948
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        503.33,
+        484.81
+      ],
+      "source_norm_xy": [
+        0.6554,
+        0.4208
+      ],
+      "circle_norm_xy": [
+        0.6554,
+        0.5213
+      ]
+    },
+    "transform": {
+      "translate_x": -6.43,
+      "translate_y": -49.56,
+      "target_x": 499.55,
+      "target_y": 484.01
+    }
+  },
+  {
+    "dir": "down-right",
+    "john": {
+      "source_xy": [
+        551.75,
+        580.43
+      ],
+      "source_norm_xy": [
+        0.6632,
+        0.4651
+      ],
+      "circle_norm_xy": [
+        0.6632,
+        0.5876
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        424.37,
+        572.14
+      ],
+      "source_norm_xy": [
+        0.5526,
+        0.745
+      ],
+      "circle_norm_xy": [
+        0.5526,
+        0.745
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        507.93,
+        533.25
+      ],
+      "source_norm_xy": [
+        0.6614,
+        0.4629
+      ],
+      "circle_norm_xy": [
+        0.6614,
+        0.5843
+      ]
+    },
+    "transform": {
+      "translate_x": 84.94,
+      "translate_y": -36.36,
+      "target_x": 509.31,
+      "target_y": 535.78
+    }
+  },
+  {
+    "dir": "down",
+    "john": {
+      "source_xy": [
+        429.91,
+        615.92
+      ],
+      "source_norm_xy": [
+        0.5167,
+        0.4935
+      ],
+      "circle_norm_xy": [
+        0.5167,
+        0.6303
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        406.91,
+        530.0
+      ],
+      "source_norm_xy": [
+        0.5298,
+        0.6901
+      ],
+      "circle_norm_xy": [
+        0.5298,
+        0.6901
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        393.75,
+        569.99
+      ],
+      "source_norm_xy": [
+        0.5127,
+        0.4948
+      ],
+      "circle_norm_xy": [
+        0.5127,
+        0.6322
+      ]
+    },
+    "transform": {
+      "translate_x": -10.08,
+      "translate_y": 38.55,
+      "target_x": 396.84,
+      "target_y": 568.55
+    }
+  },
+  {
+    "dir": "down-left",
+    "john": {
+      "source_xy": [
+        360.39,
+        540.37
+      ],
+      "source_norm_xy": [
+        0.4332,
+        0.433
+      ],
+      "circle_norm_xy": [
+        0.4332,
+        0.5395
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        428.56,
+        555.63
+      ],
+      "source_norm_xy": [
+        0.558,
+        0.7235
+      ],
+      "circle_norm_xy": [
+        0.558,
+        0.7235
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        330.73,
+        499.97
+      ],
+      "source_norm_xy": [
+        0.4306,
+        0.434
+      ],
+      "circle_norm_xy": [
+        0.4306,
+        0.541
+      ]
+    },
+    "transform": {
+      "translate_x": -95.89,
+      "translate_y": -56.83,
+      "target_x": 332.67,
+      "target_y": 498.8
+    }
+  },
+  {
+    "dir": "left",
+    "john": {
+      "source_xy": [
+        390.53,
+        527.79
+      ],
+      "source_norm_xy": [
+        0.4694,
+        0.4229
+      ],
+      "circle_norm_xy": [
+        0.4694,
+        0.5244
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        360.54,
+        510.23
+      ],
+      "source_norm_xy": [
+        0.4695,
+        0.6644
+      ],
+      "circle_norm_xy": [
+        0.4695,
+        0.6644
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        360.83,
+        487.13
+      ],
+      "source_norm_xy": [
+        0.4698,
+        0.4229
+      ],
+      "circle_norm_xy": [
+        0.4698,
+        0.5243
+      ]
+    },
+    "transform": {
+      "translate_x": -0.06,
+      "translate_y": -23.03,
+      "target_x": 360.48,
+      "target_y": 487.19
+    }
+  },
+  {
+    "dir": "up-left",
+    "john": {
+      "source_xy": [
+        354.26,
+        493.77
+      ],
+      "source_norm_xy": [
+        0.4258,
+        0.3956
+      ],
+      "circle_norm_xy": [
+        0.4258,
+        0.4835
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        408.39,
+        582.51
+      ],
+      "source_norm_xy": [
+        0.5318,
+        0.7585
+      ],
+      "circle_norm_xy": [
+        0.5318,
+        0.7585
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        325.58,
+        456.03
+      ],
+      "source_norm_xy": [
+        0.4239,
+        0.3959
+      ],
+      "circle_norm_xy": [
+        0.4239,
+        0.4838
+      ]
+    },
+    "transform": {
+      "translate_x": -81.38,
+      "translate_y": -126.72,
+      "target_x": 327.01,
+      "target_y": 455.79
+    }
+  },
+  {
+    "dir": "funny",
+    "john": {
+      "source_xy": [
+        425.72,
+        524.29
+      ],
+      "source_norm_xy": [
+        0.5117,
+        0.4201
+      ],
+      "circle_norm_xy": [
+        0.5117,
+        0.5202
+      ]
+    },
+    "flint_before": {
+      "source_xy": [
+        419.04,
+        532.42
+      ],
+      "source_norm_xy": [
+        0.5456,
+        0.6933
+      ],
+      "circle_norm_xy": [
+        0.5456,
+        0.6933
+      ]
+    },
+    "flint_after": {
+      "source_xy": [
+        393.02,
+        483.15
+      ],
+      "source_norm_xy": [
+        0.5117,
+        0.4194
+      ],
+      "circle_norm_xy": [
+        0.5117,
+        0.5191
+      ]
+    },
+    "transform": {
+      "translate_x": -26.07,
+      "translate_y": -48.46,
+      "target_x": 392.97,
+      "target_y": 483.96
+    }
+  }
+]
