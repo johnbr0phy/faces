@@ -1,0 +1,562 @@
+[
+  {
+    "dir": "center",
+    "john": {
+      "source_norm_xy": [
+        0.5139,
+        0.4275
+      ],
+      "circle_norm_xy": [
+        0.5139,
+        0.5313
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5274,
+        0.7603
+      ],
+      "circle_norm_xy": [
+        0.5274,
+        0.7603
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.5139,
+        0.4509
+      ],
+      "circle_norm_xy": [
+        0.5139,
+        0.5663
+      ],
+      "detected_source_norm_xy": [
+        0.5155,
+        0.4506
+      ],
+      "detected_circle_norm_xy": [
+        0.5155,
+        0.5659
+      ]
+    },
+    "transform": {
+      "scale": 0.8625,
+      "translate_x": 45.33,
+      "translate_y": 15.77,
+      "target_circle_x": 0.5139,
+      "target_circle_y": 0.5663,
+      "projected_source_xy": [
+        0.5139,
+        0.4509
+      ],
+      "projected_circle_xy": [
+        0.5139,
+        0.5663
+      ]
+    }
+  },
+  {
+    "dir": "up",
+    "john": {
+      "source_norm_xy": [
+        0.5067,
+        0.3727
+      ],
+      "circle_norm_xy": [
+        0.5067,
+        0.4491
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5411,
+        0.6112
+      ],
+      "circle_norm_xy": [
+        0.5411,
+        0.6112
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.5067,
+        0.4067
+      ],
+      "circle_norm_xy": [
+        0.5067,
+        0.5
+      ],
+      "detected_source_norm_xy": [
+        0.5072,
+        0.4088
+      ],
+      "detected_circle_norm_xy": [
+        0.5072,
+        0.5032
+      ]
+    },
+    "transform": {
+      "scale": 0.8583,
+      "translate_x": 32.49,
+      "translate_y": 65.59,
+      "target_circle_x": 0.5067,
+      "target_circle_y": 0.5,
+      "projected_source_xy": [
+        0.5067,
+        0.4067
+      ],
+      "projected_circle_xy": [
+        0.5067,
+        0.5
+      ]
+    }
+  },
+  {
+    "dir": "up-right",
+    "john": {
+      "source_norm_xy": [
+        0.594,
+        0.4066
+      ],
+      "circle_norm_xy": [
+        0.594,
+        0.4999
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5447,
+        0.7282
+      ],
+      "circle_norm_xy": [
+        0.5447,
+        0.7282
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.594,
+        0.4299
+      ],
+      "circle_norm_xy": [
+        0.594,
+        0.5349
+      ],
+      "detected_source_norm_xy": [
+        0.5964,
+        0.4302
+      ],
+      "detected_circle_norm_xy": [
+        0.5964,
+        0.5353
+      ]
+    },
+    "transform": {
+      "scale": 0.8586,
+      "translate_x": 97.01,
+      "translate_y": 15.1,
+      "target_circle_x": 0.594,
+      "target_circle_y": 0.5349,
+      "projected_source_xy": [
+        0.594,
+        0.4299
+      ],
+      "projected_circle_xy": [
+        0.594,
+        0.5349
+      ]
+    }
+  },
+  {
+    "dir": "right",
+    "john": {
+      "source_norm_xy": [
+        0.6505,
+        0.4202
+      ],
+      "circle_norm_xy": [
+        0.6505,
+        0.5202
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.6588,
+        0.6948
+      ],
+      "circle_norm_xy": [
+        0.6588,
+        0.6948
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.6505,
+        0.4435
+      ],
+      "circle_norm_xy": [
+        0.6505,
+        0.5552
+      ],
+      "detected_source_norm_xy": [
+        0.6512,
+        0.4478
+      ],
+      "detected_circle_norm_xy": [
+        0.6512,
+        0.5618
+      ]
+    },
+    "transform": {
+      "scale": 0.9246,
+      "translate_x": 31.72,
+      "translate_y": 17.54,
+      "target_circle_x": 0.6505,
+      "target_circle_y": 0.5552,
+      "projected_source_xy": [
+        0.6505,
+        0.4435
+      ],
+      "projected_circle_xy": [
+        0.6505,
+        0.5552
+      ]
+    }
+  },
+  {
+    "dir": "down-right",
+    "john": {
+      "source_norm_xy": [
+        0.6632,
+        0.4651
+      ],
+      "circle_norm_xy": [
+        0.6632,
+        0.5876
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5526,
+        0.745
+      ],
+      "circle_norm_xy": [
+        0.5526,
+        0.745
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.6632,
+        0.4884
+      ],
+      "circle_norm_xy": [
+        0.6632,
+        0.6226
+      ],
+      "detected_source_norm_xy": [
+        0.6624,
+        0.4891
+      ],
+      "detected_circle_norm_xy": [
+        0.6624,
+        0.6237
+      ]
+    },
+    "transform": {
+      "scale": 0.8712,
+      "translate_x": 139.58,
+      "translate_y": 64.19,
+      "target_circle_x": 0.6632,
+      "target_circle_y": 0.6226,
+      "projected_source_xy": [
+        0.6632,
+        0.4884
+      ],
+      "projected_circle_xy": [
+        0.6632,
+        0.6226
+      ]
+    }
+  },
+  {
+    "dir": "down",
+    "john": {
+      "source_norm_xy": [
+        0.5167,
+        0.4935
+      ],
+      "circle_norm_xy": [
+        0.5167,
+        0.6303
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5298,
+        0.6901
+      ],
+      "circle_norm_xy": [
+        0.5298,
+        0.6901
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.5167,
+        0.5
+      ],
+      "circle_norm_xy": [
+        0.5167,
+        0.64
+      ],
+      "detected_source_norm_xy": [
+        0.5112,
+        0.3769
+      ],
+      "detected_circle_norm_xy": [
+        0.5112,
+        0.4553
+      ]
+    },
+    "transform": {
+      "scale": 0.8596,
+      "translate_x": 47.05,
+      "translate_y": 120.41,
+      "target_circle_x": 0.5167,
+      "target_circle_y": 0.64,
+      "projected_source_xy": [
+        0.5167,
+        0.5
+      ],
+      "projected_circle_xy": [
+        0.5167,
+        0.64
+      ]
+    }
+  },
+  {
+    "dir": "down-left",
+    "john": {
+      "source_norm_xy": [
+        0.4332,
+        0.433
+      ],
+      "circle_norm_xy": [
+        0.4332,
+        0.5395
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.558,
+        0.7235
+      ],
+      "circle_norm_xy": [
+        0.558,
+        0.7235
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.4332,
+        0.4563
+      ],
+      "circle_norm_xy": [
+        0.4332,
+        0.5745
+      ],
+      "detected_source_norm_xy": [
+        0.429,
+        0.4572
+      ],
+      "detected_circle_norm_xy": [
+        0.429,
+        0.5757
+      ]
+    },
+    "transform": {
+      "scale": 0.874,
+      "translate_x": -41.89,
+      "translate_y": 40.07,
+      "target_circle_x": 0.4332,
+      "target_circle_y": 0.5745,
+      "projected_source_xy": [
+        0.4332,
+        0.4563
+      ],
+      "projected_circle_xy": [
+        0.4332,
+        0.5745
+      ]
+    }
+  },
+  {
+    "dir": "left",
+    "john": {
+      "source_norm_xy": [
+        0.4694,
+        0.4229
+      ],
+      "circle_norm_xy": [
+        0.4694,
+        0.5244
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.4695,
+        0.6644
+      ],
+      "circle_norm_xy": [
+        0.4695,
+        0.6644
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.4694,
+        0.4462
+      ],
+      "circle_norm_xy": [
+        0.4694,
+        0.5594
+      ],
+      "detected_source_norm_xy": [
+        0.4693,
+        0.4463
+      ],
+      "detected_circle_norm_xy": [
+        0.4693,
+        0.5595
+      ]
+    },
+    "transform": {
+      "scale": 0.8405,
+      "translate_x": 57.44,
+      "translate_y": 85.21,
+      "target_circle_x": 0.4694,
+      "target_circle_y": 0.5594,
+      "projected_source_xy": [
+        0.4694,
+        0.4462
+      ],
+      "projected_circle_xy": [
+        0.4694,
+        0.5594
+      ]
+    }
+  },
+  {
+    "dir": "up-left",
+    "john": {
+      "source_norm_xy": [
+        0.4258,
+        0.3956
+      ],
+      "circle_norm_xy": [
+        0.4258,
+        0.4835
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5318,
+        0.7585
+      ],
+      "circle_norm_xy": [
+        0.5318,
+        0.7585
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.4258,
+        0.4346
+      ],
+      "circle_norm_xy": [
+        0.4258,
+        0.5419
+      ],
+      "detected_source_norm_xy": [
+        0.4228,
+        0.4357
+      ],
+      "detected_circle_norm_xy": [
+        0.4228,
+        0.5435
+      ]
+    },
+    "transform": {
+      "scale": 0.82,
+      "translate_x": -7.87,
+      "translate_y": 23.04,
+      "target_circle_x": 0.4258,
+      "target_circle_y": 0.5185,
+      "projected_source_xy": [
+        0.4258,
+        0.4346
+      ],
+      "projected_circle_xy": [
+        0.4258,
+        0.5419
+      ]
+    }
+  },
+  {
+    "dir": "funny",
+    "john": {
+      "source_norm_xy": [
+        0.5117,
+        0.4201
+      ],
+      "circle_norm_xy": [
+        0.5117,
+        0.5202
+      ]
+    },
+    "flint_before": {
+      "source_norm_xy": [
+        0.5456,
+        0.6933
+      ],
+      "circle_norm_xy": [
+        0.5456,
+        0.6933
+      ]
+    },
+    "flint_after": {
+      "source_norm_xy": [
+        0.5117,
+        0.4434
+      ],
+      "circle_norm_xy": [
+        0.5117,
+        0.5552
+      ],
+      "detected_source_norm_xy": [
+        0.5102,
+        0.4435
+      ],
+      "detected_circle_norm_xy": [
+        0.5102,
+        0.5553
+      ]
+    },
+    "transform": {
+      "scale": 0.82,
+      "translate_x": 49.36,
+      "translate_y": 74.26,
+      "target_circle_x": 0.5117,
+      "target_circle_y": 0.5552,
+      "projected_source_xy": [
+        0.5117,
+        0.4434
+      ],
+      "projected_circle_xy": [
+        0.5117,
+        0.5552
+      ]
+    }
+  }
+]
