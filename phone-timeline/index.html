@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0f">
+  <meta name="description" content="Scrub through 50 of the most memorable mobile phones from 1992 to 2026. Every stop has a fixed hero photo and a live, interactive mock of that phone's signature feature.">
+  <meta property="og:title" content="Phones, in time.">
+  <meta property="og:description" content="A scrubbable timeline of 50 iconic phones, each with a live interactive demo of its signature feature.">
+  <title>Phones, in time.</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='9' y='3' width='14' height='26' rx='3' fill='%230b0b0f'/%3E%3Crect x='11' y='6' width='10' height='17' rx='1' fill='%234da3ff'/%3E%3Ccircle cx='16' cy='26' r='1.4' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="demos.css">
+  <script src="phones.js"></script>
+  <script src="demos.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <h1>Phones, in time.</h1>
+      </div>
+      <div class="topbar-right">
+        <span class="counter" id="counter" aria-hidden="true">01 / 50</span>
+        <button class="play" type="button" id="play" aria-label="Play through the timeline" aria-pressed="false" title="Play / pause">
+          <svg class="play-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8a.5.5 0 0 1 .8-.4l6 4.1a.6.6 0 0 1 0 1l-6 4.1a.5.5 0 0 1-.8-.4Z"/></svg>
+          <svg class="pause-icon" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.7" y="2" width="2.2" height="8" rx=".6"/><rect x="7.1" y="2" width="2.2" height="8" rx=".6"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="stage" aria-live="off">
+        <div class="hero">
+          <div class="hero-frame" id="hero-frame" aria-label="Phone specimen">
+            <div class="hero-stack" id="hero-stack" aria-hidden="true"></div>
+            <div class="hero-glow" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="year" id="year">1992</div>
+            <div class="titles">
+              <div class="name" id="name">Motorola MicroTAC</div>
+              <div class="label" id="label">The flip is born</div>
+            </div>
+          </div>
+          <ul class="specs" id="specs"></ul>
+          <p class="materials" id="materials"></p>
+          <div class="demo-wrap">
+            <div class="demo-head">
+              <span class="demo-kicker">Try it &middot; <span id="demo-name">signature feature</span></span>
+            </div>
+            <div class="demo-stage" id="demo" role="group" aria-label="Interactive feature demo"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="timeline">
+        <div class="ruler" id="ruler" role="slider" tabindex="0"
+             aria-label="Phone timeline, 1992 to 2026"
+             aria-valuemin="0" aria-valuemax="49" aria-valuenow="0"
+             aria-valuetext="Motorola MicroTAC, 1992, 1 of 50"
+             aria-orientation="horizontal" aria-describedby="timeline-instructions">
+          <div class="tick-viewport" id="ticks" aria-hidden="true"></div>
+          <div class="decades" id="decades" aria-hidden="true"></div>
+          <div class="playhead" id="playhead" aria-hidden="true"></div>
+        </div>
+        <div class="scrub-hint" aria-hidden="true">
+          <span>&#8592; drag / arrows &middot; Shift = fine &middot; Space = play &#8594;</span>
+        </div>
+      </div>
+    </main>
+
+    <p id="timeline-instructions" class="sr-only">Click or drag along the timeline to choose a phone. Left and Right arrow keys change phones. Hold Shift for finer steps. Press Home for the first phone, End for the last, or Space to play or pause.</p>
+    <p id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+    <noscript><p class="no-script">Enable JavaScript to scrub through 50 phones and their live demos.</p></noscript>
+  </div>
+</body>
+</html>
