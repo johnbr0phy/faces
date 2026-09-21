@@ -30,7 +30,7 @@
   padding: 2px 4px 8px; gap: 12px;
 }
 .d-snake {
-  display: block; width: min(72vmin, 360px); height: min(72vmin, 360px);
+  display: block; width: min(58vmin, 520px); height: min(58vmin, 520px);
   border-radius: 6px; background: #9aaa6c; touch-action: none; outline: none;
   box-shadow: inset 0 0 0 3px #6d764f;
 }
@@ -49,7 +49,7 @@
 /* ============ Flip phones ============ */
 .flip-hero { gap: 18px; }
 .flip-device {
-  position: relative; width: min(42vw, 168px);
+  position: relative; width: min(28vmin, 220px);
   display: grid; justify-items: center; perspective: 900px; cursor: pointer;
 }
 .flip-base {
@@ -81,7 +81,7 @@
 }
 .flip-flap.razr .flip-screen { background: #0a1826; color: #9fd0ff; }
 .flip-device[data-open="false"] .flip-flap { transform: rotateX(-158deg); }
-.flip-device.mouthpiece { width: min(38vw, 150px); }
+.flip-device.mouthpiece { width: min(24vmin, 190px); }
 .flip-device.mouthpiece .flip-flap { width: 64%; aspect-ratio: 1.6 / 1; border-radius: 12px; }
 .flip-device.mouthpiece[data-open="false"] .flip-flap { transform: rotateX(0deg); }
 .flip-device.mouthpiece[data-open="true"] .flip-flap { transform: rotateX(150deg); }
@@ -136,13 +136,13 @@
   display: flex; flex-direction: column; align-items: center;
 }
 .bezel.iphone1 {
-  width: min(52vmin, 280px);
+  width: min(38vmin, 340px);
   padding: 14px 12px 12px;
   border-radius: 36px;
   background: linear-gradient(#1c1c1c, #0a0a0a);
   aspect-ratio: 9 / 16;
   height: auto;
-  max-height: 100%;
+  max-height: calc(100% - 8px);
 }
 .bezel-ear { display: flex; align-items: center; justify-content: center; gap: 8px; height: 14px; margin-bottom: 8px; }
 .bezel-earpiece { width: 42px; height: 6px; border-radius: 3px; background: #2a2a2e; }
@@ -266,9 +266,9 @@
 
 /* ============ Dynamic Island ============ */
 .bezel.iphone14 {
-  width: min(48vmin, 260px);
+  width: min(32vmin, 300px);
   aspect-ratio: 9 / 19.5;
-  max-height: 100%;
+  max-height: calc(100% - 56px);
   border-radius: 36px;
   padding: 8px;
   background: #0a0a0c;
@@ -411,19 +411,20 @@
 @keyframes bounce { 0%,100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
 
 @media (max-width: 780px) {
-  .d-snake { width: min(68vmin, 300px); height: min(68vmin, 300px); }
-  .bezel.iphone1 { width: min(58vmin, 240px); }
-  .bezel.iphone14 { width: min(50vmin, 220px); }
+  .d-snake { width: min(62vmin, 340px); height: min(62vmin, 340px); }
+  .bezel.iphone1 { width: min(56vmin, 260px); }
+  .bezel.iphone14 { width: min(48vmin, 230px); }
+  .flip-device { width: min(36vmin, 180px); }
   .dpad { grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 44px); }
   .flip-device { width: min(46vw, 140px); }
   .island-time { font-size: 36px; }
 }
 @media (max-width: 780px) and (max-height: 720px) {
-  .d-snake { width: min(48vmin, 220px); height: min(48vmin, 220px); }
+  .d-snake { width: min(52vmin, 240px); height: min(52vmin, 240px); }
   .dpad { display: none; }
-  .bezel.iphone1 { width: min(42vmin, 180px); }
+  .bezel.iphone1 { width: min(44vmin, 200px); }
   .ios-ic-label { display: none; }
-  .bezel.iphone14 { width: min(36vmin, 160px); }
+  .bezel.iphone14 { width: min(38vmin, 170px); }
   .island-time { font-size: 26px; }
 }
 

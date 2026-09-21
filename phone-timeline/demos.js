@@ -52,7 +52,7 @@
     const S = 13, cell = 22, W = S * cell;
     const cv = h('canvas', {
       class: 'd-snake', width: W, height: W, tabindex: '0',
-      role: 'application',
+      role: 'application', 'data-demo-keys': 'arrows',
       'aria-label': 'Snake. Arrow keys, WASD, swipe, or the D-pad. Tap to start.'
     });
     const g = cv.getContext('2d');

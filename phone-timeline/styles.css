@@ -191,12 +191,15 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   font-size: 10px; letter-spacing: .12em;
   padding: 8px 10px; border-radius: 999px;
   min-height: 36px;
+  display: inline-flex; align-items: center; gap: 8px;
 }
+.chapters .ch-name { color: inherit; letter-spacing: .1em; }
 .chapters button[aria-current="true"] {
   color: var(--ink);
   border-color: var(--line);
   background: var(--bg-2);
 }
+.chapters button[aria-current="true"] .ch-name { color: var(--mint); }
 .chapters button:hover { color: var(--ink); }
 
 /* ---- Timeline scrubber (Mac-buttons UX) ---- */
@@ -239,6 +242,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .story-kicker { margin-bottom: 6px; }
   .chapters { padding-top: 8px; }
   .chapters button { padding: 8px 8px; letter-spacing: .08em; }
+  .chapters .ch-name { display: none; }
 }
 @media (max-width: 780px) and (max-height: 720px) {
   .eli5 { display: none; }

@@ -72,7 +72,7 @@
   const chapterBtns = CHAPTERS.map(ch => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = `SEC ${ch.sec}`;
+    b.innerHTML = `<span class="ch-sec">SEC ${ch.sec}</span><span class="ch-name">${ch.name}</span>`;
     b.title = `${ch.name} · ${ch.years}`;
     b.addEventListener('click', () => goTo(ch.from));
     chaptersNav.append(b);
@@ -269,18 +269,18 @@
   document.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
     const el = event.target;
-    if (el instanceof Element && (el.isContentEditable || el.closest('input, textarea, select, [role="textbox"], [data-demo-interactive]'))) {
-      if (el !== ruler) return;
-    }
-    const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
-    if (!horizontal && el !== ruler && el !== document.body && el !== document.documentElement) return;
+    if (el instanceof Element && (el.isContentEditable || el.closest('input, textarea, select, [role="textbox"]'))) return;
+    const wantsArrows = el instanceof Element && el.closest('[data-demo-keys="arrows"]');
+    const arrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    if (arrow && wantsArrows) return;
     let next;
     if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = event.shiftKey ? target + 0.1 : Math.floor(target + 0.001) + 1;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = event.shiftKey ? target - 0.1 : Math.ceil(target - 0.001) - 1;
     if (event.key === 'Home') next = 0;
     if (event.key === 'End') next = LAST;
     if (next !== undefined) { event.preventDefault(); clearTimeout(wheelTimer); goTo(next); }
-    if (event.key === ' ' && (el === ruler || el === document.body || el === document.documentElement)) {
+    const onChrome = el instanceof Element && el.closest('button, a, [role="button"]');
+    if (event.key === ' ' && !wantsArrows && !onChrome) {
       event.preventDefault(); setPlaying(!playing);
     }
   });
