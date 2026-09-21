@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0b0f">
-  <meta name="description" content="Scrub through 50 of the most memorable mobile phones from 1992 to 2026. Every stop has a fixed hero photo and a live, interactive mock of that phone's signature feature.">
+  <meta name="theme-color" content="#050508">
+  <meta name="description" content="Scrub a product story of 50 phones, 1992–2026. Each stop's signature feature is the page — play Snake, flip a RAZR, tap SpringBoard, wake the Dynamic Island.">
   <meta property="og:title" content="Phones, in time.">
-  <meta property="og:description" content="A scrubbable timeline of 50 iconic phones, each with a live interactive demo of its signature feature.">
+  <meta property="og:description" content="A scrubbable product story of 50 phones. The demo is the page.">
   <title>Phones, in time.</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='9' y='3' width='14' height='26' rx='3' fill='%230b0b0f'/%3E%3Crect x='11' y='6' width='10' height='17' rx='1' fill='%234da3ff'/%3E%3Ccircle cx='16' cy='26' r='1.4' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='9' y='3' width='14' height='26' rx='3' fill='%23050508'/%3E%3Crect x='11' y='6' width='10' height='17' rx='1' fill='%237cb8ff'/%3E%3Ccircle cx='16' cy='26' r='1.4' fill='%23fff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="demos.css">
   <script src="phones.js"></script>
@@ -23,7 +23,7 @@
         <h1>Phones, in time.</h1>
       </div>
       <div class="topbar-right">
-        <span class="counter" id="counter" aria-hidden="true">01 / 50</span>
+        <span class="counter" id="counter">01 / 50</span>
         <button class="play" type="button" id="play" aria-label="Play through the timeline" aria-pressed="false" title="Play / pause">
           <svg class="play-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8a.5.5 0 0 1 .8-.4l6 4.1a.6.6 0 0 1 0 1l-6 4.1a.5.5 0 0 1-.8-.4Z"/></svg>
           <svg class="pause-icon" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.7" y="2" width="2.2" height="8" rx=".6"/><rect x="7.1" y="2" width="2.2" height="8" rx=".6"/></svg>
@@ -32,32 +32,37 @@
     </header>
 
     <main>
-      <section class="stage" aria-live="off">
-        <div class="hero">
-          <div class="hero-frame" id="hero-frame" aria-label="Phone specimen">
-            <div class="hero-stack" id="hero-stack" aria-hidden="true"></div>
-            <div class="hero-glow" aria-hidden="true"></div>
+      <section class="beat" aria-live="off">
+        <div class="story" id="story">
+          <div class="story-kicker">
+            <span class="sec" id="sec">SEC 0.1</span>
+            <span class="story-rule" aria-hidden="true"></span>
+            <span class="chapter-name" id="chapter">POCKET</span>
+            <span class="year" id="year">1992</span>
+          </div>
+          <div class="story-row">
+            <div class="story-copy">
+              <h2 class="headline" id="headline">The flip is born</h2>
+              <p class="eli5" id="eli5">A mouthpiece that folds down. Pocketable, finally.</p>
+            </div>
+            <figure class="specimen" id="specimen">
+              <div class="specimen-frame" aria-label="Phone specimen">
+                <div class="hero-stack" id="hero-stack" aria-hidden="true"></div>
+              </div>
+              <figcaption>
+                <span class="specimen-name" id="name">Motorola MicroTAC</span>
+              </figcaption>
+            </figure>
           </div>
         </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <div class="year" id="year">1992</div>
-            <div class="titles">
-              <div class="name" id="name">Motorola MicroTAC</div>
-              <div class="label" id="label">The flip is born</div>
-            </div>
-          </div>
-          <ul class="specs" id="specs"></ul>
-          <p class="materials" id="materials"></p>
-          <div class="demo-wrap">
-            <div class="demo-head">
-              <span class="demo-kicker">Try it &middot; <span id="demo-name">signature feature</span></span>
-            </div>
-            <div class="demo-stage" id="demo" role="group" aria-label="Interactive feature demo"></div>
-          </div>
+        <div class="demo-hero" id="demo-hero" data-demo="flip_mouthpiece">
+          <div class="year-ghost" id="year-ghost" aria-hidden="true">1992</div>
+          <div class="demo-stage" id="demo" role="group" aria-label="Interactive feature demo"></div>
         </div>
       </section>
+
+      <nav class="chapters" id="chapters" aria-label="Eras"></nav>
 
       <div class="timeline">
         <div class="ruler" id="ruler" role="slider" tabindex="0"
