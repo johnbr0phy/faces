@@ -79,3 +79,5 @@ These are not the page. The page is still [a dude](https://johnbr0phy.github.io/
   how many. Same paper, same pen, not finished.
 - [plate](https://johnbr0phy.github.io/faces/plate.html) — a sheet of heads.
   Click one and they look side to side. Space for another plate.
+- [phones, in time](https://johnbr0phy.github.io/faces/phone-timeline/) — scrub
+  fifty phones. Each stop’s signature feature is the page.

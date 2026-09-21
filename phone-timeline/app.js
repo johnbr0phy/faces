@@ -1,27 +1,31 @@
 (() => {
   'use strict';
   const PHONES = window.PHONES || [];
+  const CHAPTERS = window.CHAPTERS || [];
   const N = PHONES.length;
   const LAST = N - 1;
   const $ = id => document.getElementById(id);
 
   const ruler = $('ruler'), playhead = $('playhead'), announcement = $('announcement');
   const play = $('play'), heroStack = $('hero-stack'), ticksBox = $('ticks'), decadesBox = $('decades');
-  const yearEl = $('year'), nameEl = $('name'), labelEl = $('label'), specsEl = $('specs');
-  const materialsEl = $('materials'), demoEl = $('demo'), demoNameEl = $('demo-name'), counterEl = $('counter');
+  const yearEl = $('year'), nameEl = $('name'), headlineEl = $('headline'), eli5El = $('eli5');
+  const secEl = $('sec'), chapterEl = $('chapter'), yearGhost = $('year-ghost');
+  const demoEl = $('demo'), demoHero = $('demo-hero'), storyEl = $('story');
+  const counterEl = $('counter'), chaptersNav = $('chapters');
 
   const reducedQuery = matchMedia('(prefers-reduced-motion: reduce)');
   let reduced = reducedQuery.matches;
   const clamp = v => Math.max(0, Math.min(LAST, v));
   const lerp = (a, b, t) => a + (b - a) * t;
-  const smoothstep = t => t * t * (3 - 2 * t);
 
   let position = 0, target = 0, playing = false, current = -1;
   let raf = 0, lastTime = 0, holdUntil = 0, direction = 1;
   let drag = null, rulerWidth = 900, trackInset = 0, trackWidth = 900, tickSpacing = 18;
-  let announceTimer = 0, wheelTimer = 0, wheelStart = null, demoTimer = 0;
+  let announceTimer = 0, wheelTimer = 0, wheelStart = null, demoTimer = 0, hashTimer = 0;
 
-  /* ---------- Build hero image layers ---------- */
+  const chapterOf = index => CHAPTERS.find(c => index >= c.from && index < c.until) || CHAPTERS[0];
+
+  /* ---------- Hero specimen layers (fixed 3:4, zero size jump) ---------- */
   const imgs = PHONES.map((p, i) => {
     const img = document.createElement('img');
     img.src = `phones/${p.id}.png`;
@@ -43,7 +47,6 @@
     return t;
   });
 
-  // Map an arbitrary year onto the (uneven) index axis via interpolation.
   const years = PHONES.map(p => p.year);
   function yearToIndex(y) {
     if (y <= years[0]) return 0;
@@ -65,47 +68,71 @@
     return s;
   });
 
+  /* ---------- Chapter pills ---------- */
+  const chapterBtns = CHAPTERS.map(ch => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = `SEC ${ch.sec}`;
+    b.title = `${ch.name} · ${ch.years}`;
+    b.addEventListener('click', () => goTo(ch.from));
+    chaptersNav.append(b);
+    return b;
+  });
+
   /* ---------- Panel + demo ---------- */
   let demoCleanup = null;
   function teardownDemo() {
     if (demoCleanup) { try { demoCleanup(); } catch (e) {} demoCleanup = null; }
     demoEl.replaceChildren();
+    demoHero.classList.remove('is-enter');
   }
   function buildDemo(phone) {
     teardownDemo();
-    demoNameEl.textContent = (phone.label || phone.feature || 'feature').toLowerCase();
+    demoHero.setAttribute('data-demo', phone.demo || phone.feature || '');
     if (window.DEMOS && typeof window.DEMOS.build === 'function') {
       try { demoCleanup = window.DEMOS.build(phone.demo || phone.feature, demoEl, phone) || null; }
       catch (e) { demoEl.textContent = 'Demo unavailable.'; }
     }
+    if (!reduced) {
+      void demoHero.offsetWidth;
+      demoHero.classList.add('is-enter');
+    }
   }
   function scheduleDemo(phone) {
     clearTimeout(demoTimer);
-    // Only spin up the (sometimes heavy) live demo once we've settled on a phone.
-    demoTimer = setTimeout(() => {
-      if (!playing) buildDemo(phone);
-    }, 130);
+    demoTimer = setTimeout(() => { if (!playing) buildDemo(phone); }, 120);
   }
 
-  function updatePanel(index) {
+  function updateStory(index) {
     const p = PHONES[index];
+    const ch = chapterOf(index);
     yearEl.textContent = p.year;
+    yearGhost.textContent = p.year;
     nameEl.textContent = p.name;
-    labelEl.textContent = p.label || '';
+    headlineEl.textContent = p.label || p.name;
+    eli5El.textContent = p.eli5 || '';
+    secEl.textContent = `SEC ${ch.sec}`;
+    chapterEl.textContent = ch.name;
     counterEl.textContent = `${String(index + 1).padStart(2, '0')} / ${N}`;
-    specsEl.replaceChildren(...(p.specs || []).map(s => {
-      const li = document.createElement('li'); li.textContent = s; return li;
-    }));
-    materialsEl.textContent = p.materials || '';
+    chapterBtns.forEach((b, i) => b.setAttribute('aria-current', CHAPTERS[i] === ch ? 'true' : 'false'));
     ruler.setAttribute('aria-valuenow', String(index));
     ruler.setAttribute('aria-valuetext', `${p.name}, ${p.year}, ${index + 1} of ${N}`);
+    if (!reduced) {
+      storyEl.classList.remove('is-swap');
+      void storyEl.offsetWidth;
+      storyEl.classList.add('is-swap');
+    }
     scheduleDemo(p);
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      const want = '#' + p.id;
+      if (location.hash !== want) history.replaceState(null, '', want);
+    }, 280);
   }
 
   /* ---------- Render loop ---------- */
   function render() {
     const p = reduced ? Math.round(position) : position;
-    // Cross-fade neighbouring hero frames (fixed frame → zero layout shift).
     for (let i = 0; i < N; i++) {
       const o = Math.max(0, 1 - Math.abs(p - i));
       const v = o < 0.001 ? 0 : o;
@@ -117,8 +144,8 @@
       const x = trackInset + i * tickSpacing;
       const d = (x - markerX) / (trackWidth * 0.16);
       const proximity = Math.exp(-0.5 * d * d);
-      const h = 8 + proximity * 46;
-      tick.style.transform = `translateX(${x.toFixed(2)}px) scaleY(${(h / 44).toFixed(4)})`;
+      const hgt = 8 + proximity * 46;
+      tick.style.transform = `translateX(${x.toFixed(2)}px) scaleY(${(hgt / 44).toFixed(4)})`;
       tick.style.opacity = (0.35 + proximity * 0.5).toFixed(3);
     });
     decadeEls.forEach(el => {
@@ -129,7 +156,7 @@
     const nearest = Math.round(position);
     if (nearest !== current) {
       current = nearest;
-      updatePanel(current);
+      updateStory(current);
     }
   }
 
@@ -161,7 +188,6 @@
       holdUntil = performance.now() + 250;
       requestFrame();
     } else {
-      // Rebuild the demo for whatever we landed on.
       scheduleDemo(PHONES[clamp(Math.round(target))]);
     }
   }
@@ -172,7 +198,7 @@
     if (playing) return;
     announceTimer = setTimeout(() => {
       const p = PHONES[Math.round(target)];
-      announcement.textContent = `${p.name}, ${p.year}. ${Math.round(target) + 1} of ${N}.`;
+      announcement.textContent = `${p.name}, ${p.year}. ${p.label}. ${Math.round(target) + 1} of ${N}.`;
     }, 320);
   }
 
@@ -232,7 +258,9 @@
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
       let end = Math.round(target);
-      if (end === Math.round(wheelStart) && Math.abs(target - wheelStart) > 0.02) end = Math.round(wheelStart) + Math.sign(target - wheelStart);
+      if (end === Math.round(wheelStart) && Math.abs(target - wheelStart) > 0.02) {
+        end = Math.round(wheelStart) + Math.sign(target - wheelStart);
+      }
       wheelStart = null; goTo(end);
     }, 170);
   }, { passive: false });
@@ -242,21 +270,22 @@
     if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
     const el = event.target;
     if (el instanceof Element && (el.isContentEditable || el.closest('input, textarea, select, [role="textbox"], [data-demo-interactive]'))) {
-      // Let the focused demo handle its own keys, except global arrows on the ruler.
       if (el !== ruler) return;
     }
     const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
-    if (!horizontal && el !== ruler && el !== document.body) return;
+    if (!horizontal && el !== ruler && el !== document.body && el !== document.documentElement) return;
     let next;
     if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = event.shiftKey ? target + 0.1 : Math.floor(target + 0.001) + 1;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = event.shiftKey ? target - 0.1 : Math.ceil(target - 0.001) - 1;
     if (event.key === 'Home') next = 0;
     if (event.key === 'End') next = LAST;
     if (next !== undefined) { event.preventDefault(); clearTimeout(wheelTimer); goTo(next); }
-    if (event.key === ' ' && (el === ruler || el === document.body)) { event.preventDefault(); setPlaying(!playing); }
+    if (event.key === ' ' && (el === ruler || el === document.body || el === document.documentElement)) {
+      event.preventDefault(); setPlaying(!playing);
+    }
   });
 
-  /* ---------- Resize ---------- */
+  /* ---------- Resize / hash ---------- */
   function resize() {
     rulerWidth = ruler.getBoundingClientRect().width;
     trackInset = rulerWidth / (N * 2);
@@ -268,14 +297,13 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) { setPlaying(false); lastTime = 0; } });
   reducedQuery.addEventListener?.('change', e => { reduced = e.matches; requestFrame(); });
 
-  /* ---------- Deep link via hash ---------- */
   const hashIndex = () => PHONES.findIndex(p => p.id === decodeURIComponent(location.hash.slice(1)));
   const initial = hashIndex();
   if (initial >= 0) { position = target = initial; }
   window.addEventListener('hashchange', () => { const i = hashIndex(); if (i >= 0) goTo(i); });
 
   resize();
-  updatePanel(Math.round(position));
+  updateStory(Math.round(position));
   buildDemo(PHONES[Math.round(position)]);
   requestFrame();
 })();
